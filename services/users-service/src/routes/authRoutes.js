@@ -2,8 +2,18 @@ const express = require('express');
 const router = express.Router();
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
+const rateLimit = require('express-rate-limit');
 const db = require('../config/db');
 const { verifyToken, isAdmin, addToBlacklist } = require('../middleware/authMiddleware');
+
+// Rate limiter para el login: máximo 10 intentos por IP cada 15 minutos
+const loginLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 10,
+    message: { error: 'Demasiados intentos de inicio de sesión. Intenta de nuevo en 15 minutos.' },
+    standardHeaders: true,
+    legacyHeaders: false,
+});
 
 // POST /api/auth/register - Registrar un nuevo usuario (solo admin)
 router.post('/register', verifyToken, isAdmin, async (req, res) => {
@@ -42,7 +52,7 @@ router.post('/register', verifyToken, isAdmin, async (req, res) => {
 });
 
 // POST /api/auth/login - Iniciar sesión
-router.post('/login', async (req, res) => {
+router.post('/login', loginLimiter, async (req, res) => {
     const { correo_usu, password } = req.body;
 
     if (!correo_usu || !password) {
@@ -108,10 +118,33 @@ router.post('/login', async (req, res) => {
         // Generar JWT
         const token = jwt.sign(
             { id_usu: usuario.id_usu, correo_usu: usuario.correo_usu, rol_usu: usuario.rol_usu },
-            process.env.JWT_SECRET || 'kiora_secret',
+            process.env.JWT_SECRET,
             { expiresIn: '10m' }
         );
 
+        // Detectar si es cliente web o móvil
+        const isWebClient = req.headers['x-client-type'] === 'web';
+
+        if (isWebClient) {
+            // Web: enviar token como cookie HttpOnly
+            res.cookie('token', token, {
+                httpOnly: true,
+                secure: process.env.NODE_ENV === 'production',
+                sameSite: 'Strict',
+                maxAge: 10 * 60 * 1000 // 10 minutos
+            });
+            return res.status(200).json({
+                message: 'Login exitoso.',
+                usuario: {
+                    id_usu: usuario.id_usu,
+                    nom_usu: usuario.nom_usu,
+                    correo_usu: usuario.correo_usu,
+                    rol_usu: usuario.rol_usu
+                }
+            });
+        }
+
+        // Móvil: enviar token en el body JSON
         res.status(200).json({
             message: 'Login exitoso.',
             token,
@@ -130,8 +163,16 @@ router.post('/login', async (req, res) => {
 
 // POST /api/auth/logout - Cerrar sesión (HU02)
 router.post('/logout', verifyToken, (req, res) => {
-    const token = req.headers['authorization'].split(' ')[1];
-    addToBlacklist(token);
+    // Agregar token a la blacklist (funciona para web y móvil)
+    addToBlacklist(req.token);
+
+    // Si es cliente web, limpiar la cookie
+    res.clearCookie('token', {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'Strict'
+    });
+
     res.status(200).json({ message: 'Sesión cerrada exitosamente.' });
 });
 
@@ -159,8 +200,8 @@ router.patch('/users/:id/unlock', verifyToken, isAdmin, async (req, res) => {
     }
 });
 
-// GET /api/auth/users - Obtener todos los clientes (sin exponer password)
-router.get('/users', async (req, res) => {
+// GET /api/auth/users - Obtener todos los clientes (solo admin)
+router.get('/users', verifyToken, isAdmin, async (req, res) => {
     try {
         const result = await db.query(
             'SELECT id_usu, nom_usu, correo_usu, rol_usu, tel_usu, intentos_fallidos, bloqueado_hasta FROM Cliente'

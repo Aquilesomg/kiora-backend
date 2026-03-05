@@ -1,18 +1,13 @@
-CREATE DATABASE IF NOT EXISTS kiora;
-USE kiora;
-
 -- 1. TABLA CATEGORIA
-
 CREATE TABLE Categoria (
-    cod_cat INT PRIMARY KEY AUTO_INCREMENT,
+    cod_cat SERIAL PRIMARY KEY,
     nom_cat VARCHAR(40) NOT NULL,
     descrip_cat TEXT
 );
 
 -- 2. TABLA PROVEEDOR
-
 CREATE TABLE Proveedor (
-    cod_prov INT PRIMARY KEY AUTO_INCREMENT,
+    cod_prov SERIAL PRIMARY KEY,
     id_prov VARCHAR(50),
     nom_prov VARCHAR(100) NOT NULL,
     tel_prov VARCHAR(20),
@@ -20,9 +15,8 @@ CREATE TABLE Proveedor (
 );
 
 -- 3. TABLA PRODUCTO
-
 CREATE TABLE Producto (
-    cod_prod INT PRIMARY KEY AUTO_INCREMENT,
+    cod_prod SERIAL PRIMARY KEY,
     nom_prod VARCHAR(100) NOT NULL,
     descrip_prod TEXT,
     precio_unitario DECIMAL(10,2) NOT NULL,
@@ -35,9 +29,8 @@ CREATE TABLE Producto (
 );
 
 -- 4. TABLA INVENTARIO
-
 CREATE TABLE Inventario (
-    id_mov INT PRIMARY KEY AUTO_INCREMENT,
+    id_mov SERIAL PRIMARY KEY,
     tipo_mov VARCHAR(50),
     fecha_mov DATE,
     cantidad INT,
@@ -46,9 +39,8 @@ CREATE TABLE Inventario (
 );
 
 -- 5. TABLA SUMINISTRA (M:N Proveedor - Producto)
-
 CREATE TABLE Suministra (
-    cod_prod_cod_pov INT PRIMARY KEY AUTO_INCREMENT,
+    cod_prod_cod_pov SERIAL PRIMARY KEY,
     fk_cod_prov INT,
     fk_cod_prod2 INT,
     stock INT,
@@ -57,20 +49,19 @@ CREATE TABLE Suministra (
 );
 
 -- 6. TABLA CLIENTE
-
 CREATE TABLE Cliente (
-    id_usu INT PRIMARY KEY AUTO_INCREMENT,
+    id_usu SERIAL PRIMARY KEY,
     nom_usu VARCHAR(60),
     correo_usu VARCHAR(100),
+    password_usu VARCHAR(255), -- Agregado para permitir Login seguro con JWT
     rol_usu VARCHAR(30),
     tel_usu VARCHAR(20)
 );
 
 -- 7. TABLA VENTAS
-
 CREATE TABLE Ventas (
-    id_vent INT PRIMARY KEY AUTO_INCREMENT,
-    fecha_vent DATETIME DEFAULT CURRENT_TIMESTAMP,
+    id_vent SERIAL PRIMARY KEY,
+    fecha_vent TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     precio_prod_final DECIMAL(10,2),
     montofinal_vent DECIMAL(10,2),
     metodopago_usu VARCHAR(50),
@@ -78,9 +69,8 @@ CREATE TABLE Ventas (
 );
 
 -- 8. TABLA TIENE / PRODUCTO_VENTA (M:N Producto - Ventas)
-
 CREATE TABLE Producto_Venta (
-    cod_prod_id_vent INT PRIMARY KEY AUTO_INCREMENT,
+    cod_prod_id_vent SERIAL PRIMARY KEY,
     fk_cod_prod1 INT,
     fk_id_vent2 INT,
     stock INT,
@@ -89,9 +79,8 @@ CREATE TABLE Producto_Venta (
 );
 
 -- 9. TABLA FACTURA (M:N Ventas - Cliente)
-
 CREATE TABLE Factura (
-    id_usu_id_vent INT PRIMARY KEY AUTO_INCREMENT,
+    id_usu_id_vent SERIAL PRIMARY KEY,
     fk_id_vent INT,
     fk_id_usu INT,
     cantidad_vent INT,
