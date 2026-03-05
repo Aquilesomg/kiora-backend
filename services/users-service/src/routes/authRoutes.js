@@ -73,11 +73,8 @@ router.post('/login', loginLimiter, async (req, res) => {
 
         // HU04 – Verificar si la cuenta está bloqueada
         if (usuario.bloqueado_hasta && new Date(usuario.bloqueado_hasta) > new Date()) {
-            const minutosRestantes = Math.ceil(
-                (new Date(usuario.bloqueado_hasta) - new Date()) / 60000
-            );
             return res.status(423).json({
-                error: `Cuenta bloqueada. Contacta al administrador o espera ${minutosRestantes} minuto(s).`
+                error: 'Cuenta bloqueada. Contacta al administrador para desbloquearla.'
             });
         }
 
@@ -89,14 +86,14 @@ router.post('/login', loginLimiter, async (req, res) => {
             const MAX_INTENTOS = 5;
 
             if (nuevoIntentos >= MAX_INTENTOS) {
-                // Bloquear por 15 minutos
+                // Bloquear indefinidamente (hasta que admin desbloquee)
                 await db.query(
-                    `UPDATE Cliente SET intentos_fallidos = $1, bloqueado_hasta = NOW() + INTERVAL '15 minutes'
+                    `UPDATE Cliente SET intentos_fallidos = $1, bloqueado_hasta = '9999-12-31 23:59:59'
                      WHERE id_usu = $2`,
                     [nuevoIntentos, usuario.id_usu]
                 );
                 return res.status(423).json({
-                    error: 'Cuenta bloqueada por demasiados intentos fallidos. Contacta al administrador.'
+                    error: 'Cuenta bloqueada por demasiados intentos fallidos. Contacta al administrador para desbloquearla.'
                 });
             } else {
                 await db.query(
@@ -115,18 +112,33 @@ router.post('/login', loginLimiter, async (req, res) => {
             [usuario.id_usu]
         );
 
-        // Generar JWT
+        // Generar Access Token (corta duración - 10 minutos)
         const token = jwt.sign(
             { id_usu: usuario.id_usu, correo_usu: usuario.correo_usu, rol_usu: usuario.rol_usu },
             process.env.JWT_SECRET,
             { expiresIn: '10m' }
         );
 
+        // Generar Refresh Token (larga duración - 7 días)
+        const refreshToken = jwt.sign(
+            { id_usu: usuario.id_usu, correo_usu: usuario.correo_usu, rol_usu: usuario.rol_usu },
+            process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET,
+            { expiresIn: '7d' }
+        );
+
+        // Enviar Refresh Token en una Cookie HttpOnly (web y móvil)
+        res.cookie('kiora_refresh_token', refreshToken, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: 'Strict',
+            maxAge: 7 * 24 * 60 * 60 * 1000 // 7 días en ms
+        });
+
         // Detectar si es cliente web o móvil
         const isWebClient = req.headers['x-client-type'] === 'web';
 
         if (isWebClient) {
-            // Web: enviar token como cookie HttpOnly
+            // Web: enviar Access Token también como cookie HttpOnly
             res.cookie('token', token, {
                 httpOnly: true,
                 secure: process.env.NODE_ENV === 'production',
@@ -144,7 +156,7 @@ router.post('/login', loginLimiter, async (req, res) => {
             });
         }
 
-        // Móvil: enviar token en el body JSON
+        // Móvil: enviar Access Token en el body JSON
         res.status(200).json({
             message: 'Login exitoso.',
             token,
@@ -161,13 +173,60 @@ router.post('/login', loginLimiter, async (req, res) => {
     }
 });
 
+// POST /api/auth/refresh - Renovar Access Token usando Refresh Token
+router.post('/refresh', async (req, res) => {
+    const refreshToken = req.cookies.kiora_refresh_token;
+
+    if (!refreshToken) {
+        return res.status(401).json({ error: 'No se proporcionó un Refresh Token.' });
+    }
+
+    try {
+        const decoded = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET);
+
+        const result = await db.query(
+            'SELECT id_usu, nom_usu, correo_usu, rol_usu, bloqueado_hasta FROM Cliente WHERE id_usu = $1',
+            [decoded.id_usu]
+        );
+
+        if (result.rows.length === 0) {
+            return res.status(401).json({ error: 'Usuario no válido.' });
+        }
+
+        const usuario = result.rows[0];
+
+        // Verificar que la cuenta no esté bloqueada
+        if (usuario.bloqueado_hasta && new Date(usuario.bloqueado_hasta) > new Date()) {
+            return res.status(423).json({ error: 'Cuenta bloqueada. Contacta al administrador.' });
+        }
+
+        // Generar nuevo Access Token
+        const newAccessToken = jwt.sign(
+            { id_usu: usuario.id_usu, correo_usu: usuario.correo_usu, rol_usu: usuario.rol_usu },
+            process.env.JWT_SECRET,
+            { expiresIn: '10m' }
+        );
+
+        res.status(200).json({ token: newAccessToken });
+
+    } catch (error) {
+        console.error('Error al verificar Refresh Token:', error.message);
+        return res.status(403).json({ error: 'Refresh Token no válido o expirado.' });
+    }
+});
+
 // POST /api/auth/logout - Cerrar sesión (HU02)
 router.post('/logout', verifyToken, (req, res) => {
-    // Agregar token a la blacklist (funciona para web y móvil)
+    // Agregar Access Token a la blacklist
     addToBlacklist(req.token);
 
-    // Si es cliente web, limpiar la cookie
+    // Limpiar ambas cookies (web)
     res.clearCookie('token', {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'Strict'
+    });
+    res.clearCookie('kiora_refresh_token', {
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
         sameSite: 'Strict'

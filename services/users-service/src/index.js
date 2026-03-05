@@ -16,6 +16,7 @@ app.use(cors({
     origin: process.env.CORS_ORIGIN || 'http://localhost:3000',
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
     allowedHeaders: ['Content-Type', 'Authorization'],
+    credentials: true // Permite envío de cookies desde el frontend
 }));
 app.use(cookieParser());
 app.use(express.json());
