@@ -1,294 +1,191 @@
 const express = require('express');
-const router = express.Router();
-const bcrypt = require('bcrypt');
-const jwt = require('jsonwebtoken');
 const rateLimit = require('express-rate-limit');
-const db = require('../config/db');
-const { verifyToken, isAdmin, addToBlacklist } = require('../middleware/authMiddleware');
+const router = express.Router();
+const { verifyToken, isAdmin } = require('../middleware/authMiddleware');
+const validate = require('../middleware/validate');
+const { loginSchema, registerSchema } = require('../validators/authValidators');
+const {
+    register, login, refresh, logout, unlockUser, getUsers, getMe,
+} = require('../controllers/authController');
 
-// Rate limiter para el login: máximo 10 intentos por IP cada 15 minutos
 const loginLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000,
-    max: 10,
+    windowMs: 15 * 60 * 1000, max: 10,
     message: { error: 'Demasiados intentos de inicio de sesión. Intenta de nuevo en 15 minutos.' },
-    standardHeaders: true,
-    legacyHeaders: false,
+    standardHeaders: true, legacyHeaders: false,
 });
 
-// POST /api/auth/register - Registrar un nuevo usuario (solo admin)
-router.post('/register', verifyToken, isAdmin, async (req, res) => {
-    const { nom_usu, correo_usu, password, rol_usu, tel_usu } = req.body;
+/**
+ * @swagger
+ * /api/auth/login:
+ *   post:
+ *     summary: Iniciar sesión
+ *     tags: [Auth]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [correo_usu, password]
+ *             properties:
+ *               correo_usu:
+ *                 type: string
+ *                 example: admin@kiora.com
+ *               password:
+ *                 type: string
+ *                 example: mipassword
+ *     responses:
+ *       200:
+ *         description: Login exitoso. Devuelve token (móvil) o cookie (web).
+ *       400:
+ *         description: Campos obligatorios faltantes.
+ *       401:
+ *         description: Credenciales incorrectas.
+ *       423:
+ *         description: Cuenta bloqueada.
+ */
+router.post('/login', loginLimiter, validate(loginSchema), login);
 
-    if (!nom_usu || !correo_usu || !password) {
-        return res.status(400).json({ error: 'Nombre, correo y contraseña son obligatorios.' });
-    }
+/**
+ * @swagger
+ * /api/auth/register:
+ *   post:
+ *     summary: Registrar un nuevo usuario (solo admin)
+ *     tags: [Auth]
+ *     security:
+ *       - BearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [nom_usu, correo_usu, password]
+ *             properties:
+ *               nom_usu:
+ *                 type: string
+ *               correo_usu:
+ *                 type: string
+ *               password:
+ *                 type: string
+ *               rol_usu:
+ *                 type: string
+ *                 enum: [admin, cliente]
+ *               tel_usu:
+ *                 type: string
+ *     responses:
+ *       201:
+ *         description: Usuario registrado exitosamente.
+ *       400:
+ *         description: Datos inválidos.
+ *       401:
+ *         description: Token no proporcionado.
+ *       403:
+ *         description: No es administrador.
+ *       409:
+ *         description: Correo ya registrado.
+ */
+router.post('/register', verifyToken, isAdmin, validate(registerSchema), register);
 
-    try {
-        // Verificar si el correo ya existe
-        const existing = await db.query(
-            'SELECT id_usu FROM Cliente WHERE correo_usu = $1', [correo_usu]
-        );
-        if (existing.rows.length > 0) {
-            return res.status(409).json({ error: 'El correo ya está registrado.' });
-        }
+/**
+ * @swagger
+ * /api/auth/refresh:
+ *   post:
+ *     summary: Renovar Access Token usando Refresh Token (cookie)
+ *     tags: [Auth]
+ *     responses:
+ *       200:
+ *         description: Nuevo access token generado.
+ *       401:
+ *         description: No se proporcionó Refresh Token.
+ *       403:
+ *         description: Refresh Token inválido o expirado.
+ */
+router.post('/refresh', refresh);
 
-        // Encriptar contraseña
-        const hashedPassword = await bcrypt.hash(password, 10);
+/**
+ * @swagger
+ * /api/auth/logout:
+ *   post:
+ *     summary: Cerrar sesión
+ *     tags: [Auth]
+ *     security:
+ *       - BearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Sesión cerrada exitosamente.
+ *       401:
+ *         description: Token no proporcionado.
+ */
+router.post('/logout', verifyToken, logout);
 
-        const result = await db.query(
-            `INSERT INTO Cliente (nom_usu, correo_usu, password_usu, rol_usu, tel_usu)
-             VALUES ($1, $2, $3, $4, $5) RETURNING id_usu`,
-            [nom_usu, correo_usu, hashedPassword, rol_usu || 'cliente', tel_usu || null]
-        );
+/**
+ * @swagger
+ * /api/auth/users:
+ *   get:
+ *     summary: Obtener todos los usuarios (solo admin)
+ *     tags: [Usuarios]
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *         description: Número de página
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 20
+ *         description: Cantidad de resultados por página
+ *     responses:
+ *       200:
+ *         description: Lista paginada de usuarios.
+ *       401:
+ *         description: Token no proporcionado.
+ *       403:
+ *         description: No es administrador.
+ */
+router.get('/users', verifyToken, isAdmin, getUsers);
 
-        res.status(201).json({
-            message: 'Usuario registrado exitosamente.',
-            id_usu: result.rows[0].id_usu
-        });
-    } catch (error) {
-        console.error('Error al registrar usuario:', error.message);
-        res.status(500).json({ error: 'Error interno del servidor.' });
-    }
-});
+/**
+ * @swagger
+ * /api/auth/users/{id}/unlock:
+ *   patch:
+ *     summary: Desbloquear usuario (solo admin)
+ *     tags: [Usuarios]
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Usuario desbloqueado.
+ *       404:
+ *         description: Usuario no encontrado.
+ */
+router.patch('/users/:id/unlock', verifyToken, isAdmin, unlockUser);
 
-// POST /api/auth/login - Iniciar sesión
-router.post('/login', loginLimiter, async (req, res) => {
-    const { correo_usu, password } = req.body;
-
-    if (!correo_usu || !password) {
-        return res.status(400).json({ error: 'Correo y contraseña son obligatorios.' });
-    }
-
-    try {
-        // Buscar el usuario por correo
-        const result = await db.query(
-            'SELECT * FROM Cliente WHERE correo_usu = $1', [correo_usu]
-        );
-
-        if (result.rows.length === 0) {
-            return res.status(401).json({ error: 'Credenciales incorrectas.' });
-        }
-
-        const usuario = result.rows[0];
-
-        // HU04 – Verificar si la cuenta está bloqueada
-        if (usuario.bloqueado_hasta && new Date(usuario.bloqueado_hasta) > new Date()) {
-            return res.status(423).json({
-                error: 'Cuenta bloqueada. Contacta al administrador para desbloquearla.'
-            });
-        }
-
-        // Verificar contraseña
-        const passwordValida = await bcrypt.compare(password, usuario.password_usu);
-        if (!passwordValida) {
-            // HU04 – Incrementar intentos fallidos
-            const nuevoIntentos = (usuario.intentos_fallidos || 0) + 1;
-            const MAX_INTENTOS = 5;
-
-            if (nuevoIntentos >= MAX_INTENTOS) {
-                // Bloquear indefinidamente (hasta que admin desbloquee)
-                await db.query(
-                    `UPDATE Cliente SET intentos_fallidos = $1, bloqueado_hasta = '9999-12-31 23:59:59'
-                     WHERE id_usu = $2`,
-                    [nuevoIntentos, usuario.id_usu]
-                );
-                return res.status(423).json({
-                    error: 'Cuenta bloqueada por demasiados intentos fallidos. Contacta al administrador para desbloquearla.'
-                });
-            } else {
-                await db.query(
-                    'UPDATE Cliente SET intentos_fallidos = $1 WHERE id_usu = $2',
-                    [nuevoIntentos, usuario.id_usu]
-                );
-                return res.status(401).json({
-                    error: `Credenciales incorrectas. Intento ${nuevoIntentos} de ${MAX_INTENTOS}.`
-                });
-            }
-        }
-
-        // HU04 – Login exitoso: resetear contador de intentos
-        await db.query(
-            'UPDATE Cliente SET intentos_fallidos = 0, bloqueado_hasta = NULL WHERE id_usu = $1',
-            [usuario.id_usu]
-        );
-
-        // Generar Access Token (corta duración - 10 minutos)
-        const token = jwt.sign(
-            { id_usu: usuario.id_usu, correo_usu: usuario.correo_usu, rol_usu: usuario.rol_usu },
-            process.env.JWT_SECRET,
-            { expiresIn: '10m' }
-        );
-
-        // Generar Refresh Token (larga duración - 7 días)
-        const refreshToken = jwt.sign(
-            { id_usu: usuario.id_usu, correo_usu: usuario.correo_usu, rol_usu: usuario.rol_usu },
-            process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET,
-            { expiresIn: '7d' }
-        );
-
-        // Enviar Refresh Token en una Cookie HttpOnly (web y móvil)
-        res.cookie('kiora_refresh_token', refreshToken, {
-            httpOnly: true,
-            secure: process.env.NODE_ENV === 'production',
-            sameSite: 'Strict',
-            maxAge: 7 * 24 * 60 * 60 * 1000 // 7 días en ms
-        });
-
-        // Detectar si es cliente web o móvil
-        const isWebClient = req.headers['x-client-type'] === 'web';
-
-        if (isWebClient) {
-            // Web: enviar Access Token también como cookie HttpOnly
-            res.cookie('token', token, {
-                httpOnly: true,
-                secure: process.env.NODE_ENV === 'production',
-                sameSite: 'Strict',
-                maxAge: 10 * 60 * 1000 // 10 minutos
-            });
-            return res.status(200).json({
-                message: 'Login exitoso.',
-                usuario: {
-                    id_usu: usuario.id_usu,
-                    nom_usu: usuario.nom_usu,
-                    correo_usu: usuario.correo_usu,
-                    rol_usu: usuario.rol_usu
-                }
-            });
-        }
-
-        // Móvil: enviar Access Token en el body JSON
-        res.status(200).json({
-            message: 'Login exitoso.',
-            token,
-            usuario: {
-                id_usu: usuario.id_usu,
-                nom_usu: usuario.nom_usu,
-                correo_usu: usuario.correo_usu,
-                rol_usu: usuario.rol_usu
-            }
-        });
-    } catch (error) {
-        console.error('Error al iniciar sesión:', error.message);
-        res.status(500).json({ error: 'Error interno del servidor.' });
-    }
-});
-
-// POST /api/auth/refresh - Renovar Access Token usando Refresh Token
-router.post('/refresh', async (req, res) => {
-    const refreshToken = req.cookies.kiora_refresh_token;
-
-    if (!refreshToken) {
-        return res.status(401).json({ error: 'No se proporcionó un Refresh Token.' });
-    }
-
-    try {
-        const decoded = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET);
-
-        const result = await db.query(
-            'SELECT id_usu, nom_usu, correo_usu, rol_usu, bloqueado_hasta FROM Cliente WHERE id_usu = $1',
-            [decoded.id_usu]
-        );
-
-        if (result.rows.length === 0) {
-            return res.status(401).json({ error: 'Usuario no válido.' });
-        }
-
-        const usuario = result.rows[0];
-
-        // Verificar que la cuenta no esté bloqueada
-        if (usuario.bloqueado_hasta && new Date(usuario.bloqueado_hasta) > new Date()) {
-            return res.status(423).json({ error: 'Cuenta bloqueada. Contacta al administrador.' });
-        }
-
-        // Generar nuevo Access Token
-        const newAccessToken = jwt.sign(
-            { id_usu: usuario.id_usu, correo_usu: usuario.correo_usu, rol_usu: usuario.rol_usu },
-            process.env.JWT_SECRET,
-            { expiresIn: '10m' }
-        );
-
-        res.status(200).json({ token: newAccessToken });
-
-    } catch (error) {
-        console.error('Error al verificar Refresh Token:', error.message);
-        return res.status(403).json({ error: 'Refresh Token no válido o expirado.' });
-    }
-});
-
-// POST /api/auth/logout - Cerrar sesión (HU02)
-router.post('/logout', verifyToken, (req, res) => {
-    // Agregar Access Token a la blacklist
-    addToBlacklist(req.token);
-
-    // Limpiar ambas cookies (web)
-    res.clearCookie('token', {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'Strict'
-    });
-    res.clearCookie('kiora_refresh_token', {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'Strict'
-    });
-
-    res.status(200).json({ message: 'Sesión cerrada exitosamente.' });
-});
-
-// PATCH /api/auth/users/:id/unlock - Desbloquear usuario (solo admin) (HU04)
-router.patch('/users/:id/unlock', verifyToken, isAdmin, async (req, res) => {
-    const { id } = req.params;
-
-    try {
-        const result = await db.query(
-            'UPDATE Cliente SET intentos_fallidos = 0, bloqueado_hasta = NULL WHERE id_usu = $1 RETURNING id_usu, nom_usu, correo_usu',
-            [id]
-        );
-
-        if (result.rows.length === 0) {
-            return res.status(404).json({ error: 'Usuario no encontrado.' });
-        }
-
-        res.status(200).json({
-            message: 'Usuario desbloqueado exitosamente.',
-            usuario: result.rows[0]
-        });
-    } catch (error) {
-        console.error('Error al desbloquear usuario:', error.message);
-        res.status(500).json({ error: 'Error interno del servidor.' });
-    }
-});
-
-// GET /api/auth/users - Obtener todos los clientes (solo admin)
-router.get('/users', verifyToken, isAdmin, async (req, res) => {
-    try {
-        const result = await db.query(
-            'SELECT id_usu, nom_usu, correo_usu, rol_usu, tel_usu, intentos_fallidos, bloqueado_hasta FROM Cliente'
-        );
-        res.status(200).json(result.rows);
-    } catch (error) {
-        console.error('Error al obtener usuarios:', error.message);
-        res.status(500).json({ error: 'Error interno del servidor.' });
-    }
-});
-
-// GET /api/auth/me - Obtener datos del usuario autenticado (ruta protegida)
-router.get('/me', verifyToken, async (req, res) => {
-    try {
-        const result = await db.query(
-            'SELECT id_usu, nom_usu, correo_usu, rol_usu, tel_usu FROM Cliente WHERE id_usu = $1',
-            [req.usuario.id_usu]
-        );
-
-        if (result.rows.length === 0) {
-            return res.status(404).json({ error: 'Usuario no encontrado.' });
-        }
-
-        res.status(200).json(result.rows[0]);
-    } catch (error) {
-        console.error('Error al obtener perfil:', error.message);
-        res.status(500).json({ error: 'Error interno del servidor.' });
-    }
-});
+/**
+ * @swagger
+ * /api/auth/me:
+ *   get:
+ *     summary: Obtener perfil del usuario autenticado
+ *     tags: [Auth]
+ *     security:
+ *       - BearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Datos del usuario autenticado.
+ *       404:
+ *         description: Usuario no encontrado.
+ */
+router.get('/me', verifyToken, getMe);
 
 module.exports = router;

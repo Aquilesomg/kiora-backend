@@ -1,25 +1,30 @@
-version: '3.8'
+version: '3.9'
 
 services:
   # 1. Base de Datos (PostgreSQL)
   kiora-db:
-    image: postgres:15-alpine
+    image: postgres:16-alpine
     container_name: kiora_database
-    restart: always
+    restart: unless-stopped
     environment:
-      POSTGRES_USER: root
-      POSTGRES_PASSWORD: rootpassword
-      POSTGRES_DB: kiora
+      POSTGRES_USER: ${DB_USER:-root}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-rootpassword}
+      POSTGRES_DB: ${DB_NAME:-kiora}
     ports:
-      - "5433:5432"
+      - "${DB_PORT:-5433}:5432"
     volumes:
       - kiora_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-root} -d ${DB_NAME:-kiora}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   # 2. Interfaz Visual para la BD (pgAdmin)
   kiora-pgadmin:
     image: dpage/pgadmin4
     container_name: kiora_admin_db
-    restart: always
+    restart: unless-stopped
     environment:
       PGADMIN_DEFAULT_EMAIL: admin@kiora.com
       PGADMIN_DEFAULT_PASSWORD: admin
@@ -27,6 +32,24 @@ services:
       - "5050:80"
     depends_on:
       - kiora-db
+
+  # 3. Users Service
+  users-service:
+    build:
+      context: ./services/users-service
+      dockerfile: Dockerfile
+    container_name: kiora_users_service
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    env_file:
+      - ./services/users-service/.env
+    environment:
+      DB_HOST: kiora-db    # Nombre del servicio Docker, no localhost
+      DB_PORT: 5432        # Puerto interno del contenedor
+    depends_on:
+      kiora-db:
+        condition: service_healthy
 
 volumes:
   kiora_db_data:

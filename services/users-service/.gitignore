@@ -1,0 +1,23 @@
+# Dependencias
+node_modules/
+
+# Variables de entorno — NUNCA subir a Git
+.env
+.env.local
+.env.production
+
+# Logs de Winston
+logs/
+*.log
+
+# Build
+dist/
+build/
+
+# Sistema operativo
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
