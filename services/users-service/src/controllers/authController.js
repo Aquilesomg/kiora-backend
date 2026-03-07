@@ -129,7 +129,7 @@ const refresh = async (req, res, next) => {
         }
 
         // Rotación: invalidar el refresh token anterior
-        addToBlacklist(oldRefreshToken);
+        await addToBlacklist(oldRefreshToken);
 
         // Emitir nuevos tokens
         const newAccessToken = authService.generateAccessToken(usuario);
@@ -147,8 +147,8 @@ const refresh = async (req, res, next) => {
 };
 
 // POST /api/auth/logout
-const logout = (req, res) => {
-    addToBlacklist(req.token);
+const logout = async (req, res) => {
+    await addToBlacklist(req.token);
     const clearOpts = authService.cookieOptions(0);
     res.clearCookie('token', clearOpts);
     res.clearCookie('kiora_refresh_token', clearOpts);

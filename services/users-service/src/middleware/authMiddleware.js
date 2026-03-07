@@ -1,18 +1,15 @@
 const jwt = require('jsonwebtoken');
+const blacklist = require('../config/blacklist');
 
 // Validación crítica: JWT_SECRET debe estar definido
 if (!process.env.JWT_SECRET) {
     throw new Error('JWT_SECRET no está definido en las variables de entorno. La aplicación no puede iniciar de forma segura.');
 }
 
-// HU02 – Blacklist de tokens revocados (en memoria)
-const tokenBlacklist = new Set();
+// HU02 – Blacklist de tokens revocados (Redis con TTL automático)
+const addToBlacklist = (token) => blacklist.add(token);
 
-const addToBlacklist = (token) => {
-    tokenBlacklist.add(token);
-};
-
-const verifyToken = (req, res, next) => {
+const verifyToken = async (req, res, next) => {
     // 1. Intentar leer de la cookie HttpOnly (clientes web)
     let token = req.cookies?.token;
 
@@ -29,7 +26,7 @@ const verifyToken = (req, res, next) => {
     }
 
     // HU02 – Rechazar tokens revocados (logout)
-    if (tokenBlacklist.has(token)) {
+    if (await blacklist.has(token)) {
         return res.status(401).json({ error: 'La sesión ha sido cerrada. Inicia sesión nuevamente.' });
     }
 

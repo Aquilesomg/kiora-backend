@@ -235,3 +235,162 @@ describe('GET /api/auth/users', () => {
         expect(res.body.pagination).toHaveProperty('total');
     });
 });
+
+// ════════════════════════════════════════════════════════════════════════════
+// POST /api/auth/refresh
+// ════════════════════════════════════════════════════════════════════════════
+describe('POST /api/auth/refresh', () => {
+
+    beforeEach(() => jest.clearAllMocks());
+
+    test('401 – sin cookie de refresh token', async () => {
+        const res = await request(app).post('/api/auth/refresh');
+        expect(res.statusCode).toBe(401);
+        expect(res.body.error).toMatch(/no se proporcionó un refresh token/i);
+    });
+
+    test('403 – refresh token inválido / firmado con secret incorrecto', async () => {
+        const res = await request(app)
+            .post('/api/auth/refresh')
+            .set('Cookie', 'kiora_refresh_token=token.invalido.xxx');
+
+        expect(res.statusCode).toBe(403);
+        expect(res.body.error).toMatch(/no válido o expirado/i);
+    });
+
+    test('401 – usuario no existe en la BD', async () => {
+        const jwt = require('jsonwebtoken');
+        const refreshToken = jwt.sign(
+            { id_usu: 999, correo_usu: 'ghost@test.com', rol_usu: 'cliente' },
+            process.env.JWT_REFRESH_SECRET,
+            { expiresIn: '7d' }
+        );
+
+        db.query.mockResolvedValueOnce({ rows: [] });
+
+        const res = await request(app)
+            .post('/api/auth/refresh')
+            .set('Cookie', `kiora_refresh_token=${refreshToken}`);
+
+        expect(res.statusCode).toBe(401);
+        expect(res.body.error).toMatch(/usuario no válido/i);
+    });
+
+    test('423 – cuenta bloqueada al hacer refresh', async () => {
+        const jwt = require('jsonwebtoken');
+        const refreshToken = jwt.sign(
+            { id_usu: 1, correo_usu: 'r@test.com', rol_usu: 'cliente' },
+            process.env.JWT_REFRESH_SECRET,
+            { expiresIn: '7d' }
+        );
+
+        const bloqueado_hasta = new Date(Date.now() + 10 * 60000);
+        db.query.mockResolvedValueOnce({
+            rows: [{ id_usu: 1, nom_usu: 'Ruben', correo_usu: 'r@test.com', rol_usu: 'cliente', bloqueado_hasta }]
+        });
+
+        const res = await request(app)
+            .post('/api/auth/refresh')
+            .set('Cookie', `kiora_refresh_token=${refreshToken}`);
+
+        expect(res.statusCode).toBe(423);
+        expect(res.body.error).toMatch(/bloqueada/i);
+    });
+
+    test('200 – refresh exitoso: devuelve nuevo access token y rota cookie', async () => {
+        const jwt = require('jsonwebtoken');
+        const refreshToken = jwt.sign(
+            { id_usu: 1, correo_usu: 'r@test.com', rol_usu: 'cliente' },
+            process.env.JWT_REFRESH_SECRET,
+            { expiresIn: '7d' }
+        );
+
+        db.query.mockResolvedValueOnce({
+            rows: [{ id_usu: 1, nom_usu: 'Ruben', correo_usu: 'r@test.com', rol_usu: 'cliente', bloqueado_hasta: null }]
+        });
+
+        const res = await request(app)
+            .post('/api/auth/refresh')
+            .set('Cookie', `kiora_refresh_token=${refreshToken}`);
+
+        expect(res.statusCode).toBe(200);
+        expect(res.body).toHaveProperty('token');
+        // El nuevo refresh token debe enviarse como cookie
+        const cookies = res.headers['set-cookie'];
+        expect(cookies).toBeDefined();
+        expect(cookies.some(c => c.startsWith('kiora_refresh_token='))).toBe(true);
+    });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// GET /api/auth/me
+// ════════════════════════════════════════════════════════════════════════════
+describe('GET /api/auth/me', () => {
+
+    beforeEach(() => jest.resetAllMocks());
+
+    test('401 – sin token', async () => {
+        const res = await request(app).get('/api/auth/me');
+        expect(res.statusCode).toBe(401);
+    });
+
+    test('404 – usuario no encontrado en la BD', async () => {
+        const jwt = require('jsonwebtoken');
+        const token = jwt.sign(
+            { id_usu: 999, correo_usu: 'ghost@test.com', rol_usu: 'cliente' },
+            process.env.JWT_SECRET,
+            { expiresIn: '10m' }
+        );
+
+        db.query.mockResolvedValueOnce({ rows: [] });
+
+        const res = await request(app)
+            .get('/api/auth/me')
+            .set('Authorization', `Bearer ${token}`);
+
+        expect(res.statusCode).toBe(404);
+        expect(res.body.error).toMatch(/usuario no encontrado/i);
+    });
+
+    test('200 – devuelve perfil del usuario autenticado', async () => {
+        const jwt = require('jsonwebtoken');
+        const token = jwt.sign(
+            { id_usu: 3, correo_usu: 'perfil@test.com', rol_usu: 'cliente' },
+            process.env.JWT_SECRET,
+            { expiresIn: '10m' }
+        );
+
+        db.query.mockResolvedValueOnce({
+            rows: [{ id_usu: 3, nom_usu: 'Ruben', correo_usu: 'perfil@test.com', rol_usu: 'cliente', tel_usu: null }]
+        });
+
+        const res = await request(app)
+            .get('/api/auth/me')
+            .set('Authorization', `Bearer ${token}`);
+
+        expect(res.statusCode).toBe(200);
+        expect(res.body).toHaveProperty('id_usu', 3);
+        expect(res.body).toHaveProperty('nom_usu', 'Ruben');
+        expect(res.body).not.toHaveProperty('password_usu');
+    });
+
+    test('200 – acceso por cookie (cliente web)', async () => {
+        const jwt = require('jsonwebtoken');
+        const token = jwt.sign(
+            { id_usu: 2, correo_usu: 'web@test.com', rol_usu: 'cliente' },
+            process.env.JWT_SECRET,
+            { expiresIn: '10m' }
+        );
+
+        db.query.mockResolvedValueOnce({
+            rows: [{ id_usu: 2, nom_usu: 'WebUser', correo_usu: 'web@test.com', rol_usu: 'cliente', tel_usu: null }]
+        });
+
+        const res = await request(app)
+            .get('/api/auth/me')
+            .set('Cookie', `token=${token}`);
+
+        expect(res.statusCode).toBe(200);
+        expect(res.body).toHaveProperty('id_usu', 2);
+    });
+});

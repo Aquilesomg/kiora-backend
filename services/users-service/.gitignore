@@ -21,3 +21,6 @@ Thumbs.db
 # Editor
 .vscode/
 .idea/
+
+# Blacklist de tokens revocados (runtime)
+.blacklist.json
