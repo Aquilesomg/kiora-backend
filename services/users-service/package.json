@@ -8,9 +8,9 @@
     "start": "node src/index.js",
     "test": "jest --runInBand",
     "test:watch": "jest --watch --runInBand",
-    "migrate:up": "node-pg-migrate up --envPath .env",
-    "migrate:down": "node-pg-migrate down --envPath .env",
-    "migrate:create": "node-pg-migrate create --envPath .env"
+    "migrate:up": "node-pg-migrate up --envPath .env --migrations-dir ./migrations",
+    "migrate:down": "node-pg-migrate down --envPath .env --migrations-dir ./migrations",
+    "migrate:create": "node-pg-migrate create --envPath .env --migrations-dir ./migrations"
   },
   "keywords": [],
   "author": "",

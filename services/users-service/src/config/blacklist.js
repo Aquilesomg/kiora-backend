@@ -36,11 +36,16 @@ if (process.env.NODE_ENV === 'test') {
         // Reintentos con backoff para no crashear si Redis tarda en arrancar
         retryStrategy: (times) => Math.min(times * 100, 3000),
         lazyConnect: true,
+        // Configuración para fail-fast:
+        maxRetriesPerRequest: 0,
+        enableOfflineQueue: false,
     });
 
     client.on('error', (err) => {
-        // No matar el proceso — loguear y seguir (degraded mode)
-        console.error('[Redis blacklist] Error de conexión:', err.message);
+        // Reducir el ruido si simplemente no hay servidor Redis (ECONNREFUSED)
+        if (err.code !== 'ECONNREFUSED') {
+            console.error('[Redis blacklist] Error de conexión:', err.message);
+        }
     });
 }
 
@@ -92,7 +97,9 @@ const add = async (token) => {
             await client.set(key, '1', 'EX', ttl);
         }
     } catch (err) {
-        console.error('[Redis blacklist] Error al agregar token:', err.message);
+        if (!err.message.includes("Stream isn't writeable") && !err.message.includes("max retries")) {
+            console.error('[Redis blacklist] Error al agregar token:', err.message);
+        }
     }
 };
 
@@ -108,7 +115,9 @@ const has = async (token) => {
         const result = await client.exists(key);
         return result === 1;
     } catch (err) {
-        console.error('[Redis blacklist] Error al verificar token:', err.message);
+        if (!err.message.includes("Stream isn't writeable") && !err.message.includes("max retries")) {
+            console.error('[Redis blacklist] Error al verificar token:', err.message);
+        }
         // Fail-open: si Redis está caído, no bloqueamos el acceso
         return false;
     }

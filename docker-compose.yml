@@ -7,15 +7,15 @@ services:
     container_name: kiora_database
     restart: unless-stopped
     environment:
-      POSTGRES_USER: ${DB_USER:-root}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-rootpassword}
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-123}
       POSTGRES_DB: ${DB_NAME:-kiora}
     ports:
       - "${DB_PORT:-5433}:5432"
     volumes:
       - kiora_db_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-root} -d ${DB_NAME:-kiora}"]
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres} -d ${DB_NAME:-kiora}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -41,7 +41,7 @@ services:
     container_name: kiora_users_service
     restart: unless-stopped
     ports:
-      - "3001:3001"
+      - "3002:3001"
     env_file:
       - ./services/users-service/.env
     environment:
