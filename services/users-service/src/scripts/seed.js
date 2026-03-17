@@ -5,15 +5,15 @@ require('dotenv').config({ path: '../.env' }); // To run from src/scripts
 const pool = new Pool({
     user: process.env.DB_USER || 'postgres',
     host: process.env.DB_HOST || 'localhost',
-    database: process.env.DB_NAME || 'kiora',
-    password: process.env.DB_PASSWORD || '123',
+    database: process.env.DB_NAME || 'postgres',
+    password: process.env.DB_PASSWORD || 'rootpasword',
     port: process.env.DB_PORT || 5432,
 });
 
 async function seed() {
     try {
         console.log('Conectando a la base de datos...');
-        
+
         // Crear tabla Cliente si no existe (la base, por si acaso)
         const createTableQuery = `
             CREATE TABLE IF NOT EXISTS Cliente (
@@ -24,30 +24,30 @@ async function seed() {
                 tel_usu VARCHAR(20)
             );
         `;
-        
+
         await pool.query(createTableQuery);
 
         // Agregamos las columnas que falten usando ALTER TABLE
         try {
             await pool.query('ALTER TABLE Cliente ADD COLUMN password_usu VARCHAR(255);');
             console.log('✅ Columna password_usu añadida.');
-        } catch(e) { /* Ya existe, ignorar */ }
+        } catch (e) { /* Ya existe, ignorar */ }
 
         try {
             await pool.query('ALTER TABLE Cliente ADD COLUMN intentos_fallidos INT DEFAULT 0;');
             console.log('✅ Columna intentos_fallidos añadida.');
-        } catch(e) { /* Ya existe, ignorar */ }
+        } catch (e) { /* Ya existe, ignorar */ }
 
         try {
             await pool.query('ALTER TABLE Cliente ADD COLUMN bloqueado_hasta TIMESTAMP;');
             console.log('✅ Columna bloqueado_hasta añadida.');
-        } catch(e) { /* Ya existe, ignorar */ }
+        } catch (e) { /* Ya existe, ignorar */ }
 
         console.log('✅ Tabla Cliente asegurada en la base de datos.');
 
         // Verificar si el usuario ya existe
         const checkUser = await pool.query('SELECT * FROM Cliente WHERE correo_usu = $1', ['Meneses@gmail.com']);
-        
+
         if (checkUser.rows.length === 0) {
             // Crear usuario de prueba
             const hashedPassword = await bcrypt.hash('admin123', 10);
@@ -65,7 +65,7 @@ async function seed() {
 
         // Crear usuario administrador Ruben
         const checkRuben = await pool.query('SELECT * FROM Cliente WHERE correo_usu = $1', ['ruben@kiora.com']);
-        
+
         if (checkRuben.rows.length === 0) {
             const hashedPasswordRuben = await bcrypt.hash('ruben123', 10);
             await pool.query(

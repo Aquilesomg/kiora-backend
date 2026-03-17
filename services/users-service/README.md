@@ -1,29 +1,26 @@
 # Kiora — Users Service
 
-Servicio de autenticación y gestión de usuarios del sistema Kiora. Construido con **Node.js**, **Express** y **PostgreSQL**.
+Servicio de autenticación y gestión de usuarios del sistema Kiora. Construido con **Node.js**, **Express**, **PostgreSQL** y **Redis**.
 
 ---
 
 ## Requisitos previos
 
-Antes de empezar, asegúrate de tener instalado:
-
 - [Node.js 20+](https://nodejs.org/)
-- [PostgreSQL 15+](https://www.postgresql.org/) — o [Docker](https://www.docker.com/) para levantarlo en contenedor
+- [Docker](https://www.docker.com/) (recomendado)
 
 ---
 
 ## Opción A: Levantar con Docker (recomendado)
 
-La forma más fácil. Solo necesitas Docker instalado.
-
 ```bash
-# 1. Desde la raíz del backend (kiora-backend/)
+# Desde la raíz del backend (kiora-backend/)
 docker compose up
 ```
 
-Esto levanta automáticamente:
+Levanta automáticamente:
 - PostgreSQL en el puerto `5433`
+- Redis en el puerto `6379`
 - pgAdmin en `http://localhost:5050`
 - Users Service en `http://localhost:3001`
 
@@ -31,7 +28,7 @@ Esto levanta automáticamente:
 
 ## Opción B: Levantar manualmente
 
-### 1. Clonar e instalar dependencias
+### 1. Instalar dependencias
 
 ```bash
 cd kiora-backend/services/users-service
@@ -41,7 +38,6 @@ npm install
 ### 2. Configurar variables de entorno
 
 ```bash
-# Copia la plantilla
 cp .env.example .env
 ```
 
@@ -50,7 +46,7 @@ Edita `.env` con tus valores:
 ```env
 PORT=3001
 
-DB_USER=root
+DB_USER=postgres
 DB_PASSWORD=rootpassword
 DB_HOST=localhost
 DB_PORT=5433
@@ -59,13 +55,18 @@ DB_NAME=kiora
 JWT_SECRET=TuSecretoSuperSeguro
 JWT_REFRESH_SECRET=TuRefreshSecretoSuperSeguro
 
+REDIS_HOST=localhost
+REDIS_PORT=6379
+
+RESEND_API_KEY=re_xxxxxxxxxxxx
+FROM_EMAIL=no-reply@tudominio.com
+APP_URL=http://localhost:3000
+
 CORS_ORIGIN=http://localhost:3000
 NODE_ENV=development
 ```
 
 ### 3. Crear la base de datos
-
-Conéctate a PostgreSQL y crea la base de datos:
 
 ```sql
 CREATE DATABASE kiora;
@@ -74,29 +75,22 @@ CREATE DATABASE kiora;
 ### 4. Correr las migraciones
 
 ```bash
-# Aplica todas las migraciones y crea las tablas
 npm run migrate:up
 ```
 
-Esto crea todas las tablas automáticamente (Cliente, Producto, Ventas, etc.).
-
-### 5. (Opcional) Crear usuario administrador inicial
+### 5. (Opcional) Crear usuarios de prueba
 
 ```bash
 node src/scripts/seed.js
+# Crea: Meneses@gmail.com / admin123  y  ruben@kiora.com / ruben123
 ```
 
 ### 6. Arrancar el servidor
 
 ```bash
-# Desarrollo (con recarga automática)
-npm run dev
-
-# Producción
-npm start
+npm run dev   # Desarrollo (recarga automática)
+npm start     # Producción
 ```
-
-El servidor estará en: `http://localhost:3001`
 
 ---
 
@@ -109,13 +103,16 @@ El servidor estará en: `http://localhost:3001`
 | `POST` | `/api/auth/logout` | Cerrar sesión | Sí |
 | `POST` | `/api/auth/refresh` | Renovar token | Cookie |
 | `GET` | `/api/auth/me` | Perfil propio | Sí |
-| `GET` | `/api/auth/users` | Lista de usuarios | Admin |
-| `PATCH` | `/api/auth/users/:id/unlock` | Desbloquear usuario | Admin |
-| `GET` | `/api/users/health` | Estado del servicio | No |
+| `PATCH` | `/api/auth/me/password` | Cambiar contraseña propia | Sí |
+| `GET` | `/api/auth/users` | Lista de usuarios paginada | Admin |
+| `PATCH` | `/api/auth/users/:id` | Actualizar usuario | Admin |
+| `DELETE` | `/api/auth/users/:id` | Eliminar usuario (soft delete) | Admin |
+| `PATCH` | `/api/auth/users/:id/unlock` | Desbloquear cuenta | Admin |
+| `PATCH` | `/api/auth/users/:id/role` | Asignar rol | Admin |
+| `POST` | `/api/auth/forgot-password` | Solicitar recuperación de contraseña | No |
+| `POST` | `/api/auth/reset-password` | Restablecer contraseña con token | No |
 
 ### Documentación interactiva (Swagger)
-
-Con el servidor corriendo, abre en el navegador:
 
 ```
 http://localhost:3001/api/docs
@@ -126,12 +123,12 @@ http://localhost:3001/api/docs
 ## Scripts disponibles
 
 ```bash
-npm run dev           # Servidor en modo desarrollo
-npm start             # Servidor en producción
-npm test              # Correr todos los tests
-npm run migrate:up    # Aplicar migraciones pendientes
-npm run migrate:down  # Revertir la última migración
-npm run migrate:create nombre  # Crear nueva migración
+npm run dev              # Servidor en modo desarrollo
+npm start                # Servidor en producción
+npm test                 # Correr todos los tests (54 tests)
+npm run migrate:up       # Aplicar migraciones pendientes
+npm run migrate:down     # Revertir la última migración
+npm run migrate:create   # Crear nueva migración
 ```
 
 ---
@@ -140,31 +137,37 @@ npm run migrate:create nombre  # Crear nueva migración
 
 ```
 src/
-├── app.js                  # Configuración Express (middlewares, rutas)
-├── index.js                # Punto de entrada (arranca servidor)
+├── app.js
+├── index.js
 ├── config/
+│   ├── blacklist.js        # Blacklist de tokens con Redis (ioredis)
 │   ├── db.js               # Conexión a PostgreSQL
+│   ├── emailService.js     # Envío de emails con Resend
 │   ├── env.js              # Validación de variables de entorno
 │   ├── logger.js           # Logger Winston
 │   └── swagger.js          # Configuración Swagger
 ├── middleware/
-│   ├── authMiddleware.js   # verifyToken, isAdmin, blacklist
+│   ├── authMiddleware.js   # verifyToken, isAdmin
 │   ├── errorHandler.js     # Manejo centralizado de errores
 │   └── validate.js         # Factory de validación Joi
 ├── validators/
-│   └── authValidators.js   # Schemas Joi para login y register
+│   └── authValidators.js   # Schemas Joi
 ├── repositories/
-│   └── userRepository.js   # Queries a la DB (único punto de acceso)
+│   └── userRepository.js   # Único punto de acceso a la DB
 ├── services/
-│   └── authService.js      # Lógica de JWT (generar, verificar)
+│   └── authService.js      # Lógica JWT
 ├── controllers/
 │   └── authController.js   # Lógica de negocio
 ├── routes/
-│   └── authRoutes.js       # Definición de rutas
+│   └── authRoutes.js       # Rutas + Swagger JSDoc
 ├── db/
-│   └── migrations/         # Archivos SQL de migraciones
+│   └── migrations/
+│       ├── 001_schema_inicial.sql
+│       ├── 002_add_lock_policy.sql
+│       ├── 003_add_activo_to_cliente.sql
+│       └── 004_add_reset_tokens.sql
 └── __tests__/
-    └── authRoutes.test.js  # Tests de integración
+    └── authRoutes.test.js  # 54 tests de integración
 ```
 
 ---
@@ -174,17 +177,17 @@ src/
 El servicio soporta **dos tipos de clientes**:
 
 **Web (React, etc.):**
-- El Access Token se guarda en una cookie `HttpOnly` (más seguro)
-- Enviar el header `x-client-type: web` en el login
+- Access Token en cookie `HttpOnly` (más seguro)
+- Header `x-client-type: web` en el login
 
 **Móvil (React Native, etc.):**
-- El Access Token se devuelve en el body JSON
-- Enviarlo como `Authorization: Bearer <token>` en cada request
+- Access Token en el body JSON
+- `Authorization: Bearer <token>` en cada request
 
-El **Refresh Token** se guarda siempre en una cookie `HttpOnly` para mayor seguridad.
+El **Refresh Token** siempre va en cookie `HttpOnly`.
 
 ---
 
 ## CI/CD
 
-Los tests se corren automáticamente con **GitHub Actions** en cada push a `main` o `develop`. Ver el badge en la tab **Actions** del repositorio.
+Tests automáticos con **GitHub Actions** en cada push a `main` o `develop`. Ver `.github/workflows/ci.yml`.

@@ -3,9 +3,10 @@ const rateLimit = require('express-rate-limit');
 const router = express.Router();
 const { verifyToken, isAdmin } = require('../middleware/authMiddleware');
 const validate = require('../middleware/validate');
-const { loginSchema, registerSchema } = require('../validators/authValidators');
+const { loginSchema, registerSchema, updateUserSchema, updateRoleSchema, forgotPasswordSchema, resetPasswordSchema, changePasswordSchema } = require('../validators/authValidators');
 const {
     register, login, refresh, logout, unlockUser, getUsers, getMe,
+    updateUser, deleteUser, updateRole, forgotPassword, resetPassword, changePassword,
 } = require('../controllers/authController');
 
 const loginLimiter = rateLimit({
@@ -187,5 +188,190 @@ router.patch('/users/:id/unlock', verifyToken, isAdmin, unlockUser);
  *         description: Usuario no encontrado.
  */
 router.get('/me', verifyToken, getMe);
+
+/**
+ * @swagger
+ * /api/auth/users/{id}/role:
+ *   patch:
+ *     summary: Asignar rol a un usuario (solo admin) — HU45
+ *     tags: [Usuarios]
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [rol_usu]
+ *             properties:
+ *               rol_usu:
+ *                 type: string
+ *                 enum: [admin, cliente]
+ *     responses:
+ *       200:
+ *         description: Rol actualizado exitosamente.
+ *       400:
+ *         description: Rol inválido.
+ *       403:
+ *         description: No puedes cambiar tu propio rol.
+ *       404:
+ *         description: Usuario no encontrado.
+ */
+router.patch('/users/:id/role', verifyToken, isAdmin, validate(updateRoleSchema), updateRole);
+
+/**
+ * @swagger
+ * /api/auth/users/{id}:
+ *   patch:
+ *     summary: Actualizar datos de un usuario (solo admin) — HU43
+ *     tags: [Usuarios]
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               nom_usu:
+ *                 type: string
+ *               correo_usu:
+ *                 type: string
+ *               tel_usu:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Usuario actualizado exitosamente.
+ *       400:
+ *         description: Ningún campo enviado para actualizar.
+ *       404:
+ *         description: Usuario no encontrado.
+ */
+router.patch('/users/:id', verifyToken, isAdmin, validate(updateUserSchema), updateUser);
+
+/**
+ * @swagger
+ * /api/auth/users/{id}:
+ *   delete:
+ *     summary: Eliminar usuario (soft delete, solo admin) — HU44
+ *     tags: [Usuarios]
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Usuario eliminado exitosamente.
+ *       403:
+ *         description: No puedes eliminar tu propio usuario.
+ *       404:
+ *         description: Usuario no encontrado.
+ */
+router.delete('/users/:id', verifyToken, isAdmin, deleteUser);
+
+/**
+ * @swagger
+ * /api/auth/forgot-password:
+ *   post:
+ *     summary: Solicitar recuperación de contraseña — HU05
+ *     tags: [Auth]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [correo_usu]
+ *             properties:
+ *               correo_usu:
+ *                 type: string
+ *                 example: usuario@kiora.com
+ *     responses:
+ *       200:
+ *         description: Siempre responde 200 (no revela si el correo existe).
+ *       400:
+ *         description: Correo inválido.
+ */
+router.post('/forgot-password', validate(forgotPasswordSchema), forgotPassword);
+
+/**
+ * @swagger
+ * /api/auth/reset-password:
+ *   post:
+ *     summary: Restablecer contraseña con token — HU05
+ *     tags: [Auth]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [token, new_password]
+ *             properties:
+ *               token:
+ *                 type: string
+ *               new_password:
+ *                 type: string
+ *                 minLength: 6
+ *     responses:
+ *       200:
+ *         description: Contraseña restablecida exitosamente.
+ *       400:
+ *         description: Token inválido, expirado o campos faltantes.
+ */
+router.post('/reset-password', validate(resetPasswordSchema), resetPassword);
+
+/**
+ * @swagger
+ * /api/auth/me/password:
+ *   patch:
+ *     summary: Cambiar contraseña del usuario autenticado
+ *     tags: [Auth]
+ *     security:
+ *       - BearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [current_password, new_password]
+ *             properties:
+ *               current_password:
+ *                 type: string
+ *                 description: Contraseña actual del usuario
+ *               new_password:
+ *                 type: string
+ *                 minLength: 6
+ *                 description: Nueva contraseña (debe ser diferente a la actual)
+ *     responses:
+ *       200:
+ *         description: Contraseña actualizada exitosamente.
+ *       400:
+ *         description: Campos inválidos o nueva igual a la actual.
+ *       401:
+ *         description: Token no proporcionado o contraseña actual incorrecta.
+ *       404:
+ *         description: Usuario no encontrado.
+ */
+router.patch('/me/password', verifyToken, validate(changePasswordSchema), changePassword);
 
 module.exports = router;

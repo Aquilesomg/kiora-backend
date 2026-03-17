@@ -1,0 +1,37 @@
+name: CI — Kiora Backend
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  test-users-service:
+    name: Tests — users-service
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: services/users-service
+
+    steps:
+      - name: Checkout código
+        uses: actions/checkout@v4
+
+      - name: Configurar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: services/users-service/package-lock.json
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Correr tests
+        run: npm test -- --forceExit
+        env:
+          NODE_ENV: test
+          JWT_SECRET: ci_test_secret
+          JWT_REFRESH_SECRET: ci_test_refresh_secret

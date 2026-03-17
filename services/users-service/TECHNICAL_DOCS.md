@@ -29,9 +29,10 @@
 El **Users Service** es un microservicio REST del sistema Kiora responsable de:
 
 - Autenticación de usuarios (login, logout, refresh de tokens)
-- Gestión de usuarios (registro, consulta, bloqueo/desbloqueo)
+- Gestión de usuarios (registro, consulta, actualización, eliminación, bloqueo/desbloqueo)
 - Control de acceso por roles (`admin`, `cliente`)
 - Política de seguridad de cuentas (bloqueo por intentos fallidos)
+- Recuperación de contraseña por email (Resend)
 
 El servicio opera de forma **independiente** y se comunica a través de HTTP. Está diseñado para servir tanto a clientes **web** (React) como **móviles** (React Native).
 
@@ -91,37 +92,40 @@ HTTP Request
 ```
 users-service/
 ├── src/
-│   ├── app.js                    # Setup de Express (middlewares, rutas, Swagger)
-│   ├── index.js                  # Punto de entrada: valida .env y arranca servidor
+│   ├── app.js
+│   ├── index.js
 │   ├── config/
+│   │   ├── blacklist.js          # Blacklist de tokens con Redis (ioredis)
 │   │   ├── db.js                 # Pool de conexiones PostgreSQL
+│   │   ├── emailService.js       # Envío de emails con Resend SDK
 │   │   ├── env.js                # Validación de variables de entorno al inicio
-│   │   ├── logger.js             # Logger Winston (niveles, formato, transports)
+│   │   ├── logger.js             # Logger Winston
 │   │   └── swagger.js            # Configuración swagger-jsdoc
 │   ├── middleware/
 │   │   ├── authMiddleware.js     # verifyToken, isAdmin, blacklist de tokens
 │   │   ├── errorHandler.js       # Middleware global de errores (Express)
 │   │   └── validate.js           # Factory de validación Joi
 │   ├── validators/
-│   │   └── authValidators.js     # Schemas Joi: loginSchema, registerSchema
+│   │   └── authValidators.js     # Schemas Joi: login, register, update, role, forgot, reset
 │   ├── repositories/
-│   │   └── userRepository.js     # Todas las queries SQL de la tabla Cliente
+│   │   └── userRepository.js     # Todas las queries SQL (Cliente + reset_tokens)
 │   ├── services/
 │   │   └── authService.js        # Generación/verificación de JWT y opciones de cookie
 │   ├── controllers/
-│   │   └── authController.js     # Funciones: login, register, logout, refresh...
+│   │   └── authController.js     # Funciones de negocio
 │   ├── routes/
 │   │   └── authRoutes.js         # Rutas con JSDoc Swagger
 │   ├── db/
 │   │   └── migrations/
 │   │       ├── 001_schema_inicial.sql
-│   │       └── 002_add_lock_policy.sql
+│   │       ├── 002_add_lock_policy.sql
+│   │       ├── 003_add_activo_to_cliente.sql
+│   │       └── 004_add_reset_tokens.sql
 │   └── __tests__/
-│       └── authRoutes.test.js    # Tests de integración (16 tests)
-├── .env                          # Variables de entorno (NO subir a Git)
-├── .env.example                  # Plantilla de variables para el equipo
+│       └── authRoutes.test.js    # 48 tests de integración
+├── .env
+├── .env.example
 ├── .gitignore
-├── database.json                 # Configuración de node-pg-migrate
 ├── Dockerfile
 ├── package.json
 └── README.md
@@ -143,6 +147,8 @@ users-service/
 | `cors` | ^2.8 | Control de Cross-Origin Resource Sharing |
 | `helmet` | ^8 | Cabeceras de seguridad HTTP |
 | `express-rate-limit` | ^8 | Rate limiting por IP |
+| `ioredis` | ^5 | Cliente Redis (blacklist de tokens) |
+| `resend` | ^4 | Envío de emails transaccionales |
 | `joi` | ^17 | Validación de esquemas de datos |
 | `winston` | ^3 | Logger con niveles y transports |
 | `node-pg-migrate` | ^8 | Sistema de migraciones de base de datos |
@@ -167,15 +173,23 @@ Todas son validadas en `src/config/env.js` al arrancar. Si falta alguna, el proc
 | Variable | Requerida | Descripción | Ejemplo |
 |---|---|---|---|
 | `PORT` | No | Puerto del servidor | `3001` |
-| `DB_USER` | ✅ | Usuario de PostgreSQL | `root` |
+| `DB_USER` | ✅ | Usuario de PostgreSQL | `postgres` |
 | `DB_PASSWORD` | ✅ | Contraseña de PostgreSQL | `rootpassword` |
 | `DB_HOST` | ✅ | Host de la base de datos | `localhost` |
 | `DB_PORT` | ✅ | Puerto de PostgreSQL | `5433` |
 | `DB_NAME` | ✅ | Nombre de la base de datos | `kiora` |
 | `JWT_SECRET` | ✅ | Clave para firmar Access Tokens | (string largo y aleatorio) |
 | `JWT_REFRESH_SECRET` | ✅ | Clave para firmar Refresh Tokens | (string largo y aleatorio) |
+| `REDIS_HOST` | No | Host de Redis | `localhost` |
+| `REDIS_PORT` | No | Puerto de Redis | `6379` |
+| `REDIS_PASSWORD` | No | Contraseña de Redis (si aplica) | — |
+| `RESEND_API_KEY` | No* | API key de Resend | `re_xxxx` |
+| `FROM_EMAIL` | No* | Email remitente | `no-reply@kiora.com` |
+| `APP_URL` | No* | URL base del frontend | `http://localhost:3000` |
 | `CORS_ORIGIN` | No | Origen permitido para CORS | `http://localhost:3000` |
 | `NODE_ENV` | No | Entorno de ejecución | `development` / `production` |
+
+*Requeridas para activar el flujo de recuperación de contraseña (HU05).
 
 ---
 
@@ -188,25 +202,39 @@ Todas son validadas en `src/config/env.js` al arrancar. Si falta alguna, el proc
 
 ```sql
 CREATE TABLE Cliente (
-    id_usu          SERIAL PRIMARY KEY,
-    nom_usu         VARCHAR(60),
-    correo_usu      VARCHAR(100) UNIQUE,
-    password_usu    VARCHAR(255),        -- bcrypt hash
-    rol_usu         VARCHAR(30),         -- 'admin' | 'cliente'
-    tel_usu         VARCHAR(20),
-    intentos_fallidos INT DEFAULT 0,     -- HU04: política de bloqueo
-    bloqueado_hasta TIMESTAMP NULL       -- NULL = no bloqueado
+    id_usu            SERIAL PRIMARY KEY,
+    nom_usu           VARCHAR(60),
+    correo_usu        VARCHAR(100) UNIQUE,
+    password_usu      VARCHAR(255),        -- bcrypt hash
+    rol_usu           VARCHAR(30),         -- 'admin' | 'cliente'
+    tel_usu           VARCHAR(20),
+    intentos_fallidos INT DEFAULT 0,       -- HU04: política de bloqueo
+    bloqueado_hasta   TIMESTAMP NULL,      -- NULL = no bloqueado
+    activo            BOOLEAN DEFAULT true -- HU44: soft delete
+);
+```
+
+### Tabla `reset_tokens` (HU05)
+
+```sql
+CREATE TABLE reset_tokens (
+    id        SERIAL PRIMARY KEY,
+    id_usu    INT NOT NULL REFERENCES Cliente(id_usu),
+    token     VARCHAR(255) NOT NULL UNIQUE,
+    expira_en TIMESTAMP NOT NULL,          -- 15 minutos desde creación
+    usado     BOOLEAN NOT NULL DEFAULT false,
+    creado_en TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 ```
 
 ### Sistema de Migraciones
 
-Se usa `node-pg-migrate` con archivos SQL numerados:
-
 ```
 src/db/migrations/
-  001_schema_inicial.sql   ← Crea todas las tablas del sistema
-  002_add_lock_policy.sql  ← Agrega columnas de política de bloqueo
+  001_schema_inicial.sql          ← Crea todas las tablas del sistema
+  002_add_lock_policy.sql         ← Agrega intentos_fallidos y bloqueado_hasta
+  003_add_activo_to_cliente.sql   ← Agrega columna activo (soft delete)
+  004_add_reset_tokens.sql        ← Crea tabla para recuperación de contraseña
 ```
 
 **Comandos:**
@@ -277,16 +305,23 @@ const validate = (schema) => (req, res, next) => {
 
 | Función | SQL | Descripción |
 |---|---|---|
-| `findByEmail(email)` | `SELECT * FROM Cliente WHERE correo_usu = $1` | Búsqueda para login |
-| `findById(id)` | `SELECT ... WHERE id_usu = $1` | Búsqueda para refresh |
-| `findProfile(id)` | `SELECT ... WHERE id_usu = $1` | Datos públicos del perfil |
-| `findAll(limit, offset)` | `SELECT ... LIMIT $1 OFFSET $2` | Lista paginada |
-| `countAll()` | `SELECT COUNT(*) FROM Cliente` | Total para paginación |
+| `findByEmail(email)` | `SELECT * FROM Cliente WHERE correo_usu = $1 AND activo = true` | Búsqueda para login |
+| `findById(id)` | `SELECT ... WHERE id_usu = $1 AND activo = true` | Búsqueda para refresh |
+| `findProfile(id)` | `SELECT ... WHERE id_usu = $1 AND activo = true` | Datos públicos del perfil |
+| `findAll(limit, offset)` | `SELECT ... WHERE activo = true LIMIT $1 OFFSET $2` | Lista paginada |
+| `countAll()` | `SELECT COUNT(*) FROM Cliente WHERE activo = true` | Total para paginación |
 | `create(...)` | `INSERT INTO Cliente ... RETURNING id_usu` | Registro de usuario |
+| `update(id, fields)` | `UPDATE Cliente SET <campos> WHERE id_usu = $n AND activo = true` | Actualización parcial dinámica |
+| `softDelete(id)` | `UPDATE Cliente SET activo = false WHERE id_usu = $1` | Soft delete |
+| `updateRole(id, rol)` | `UPDATE Cliente SET rol_usu = $1 WHERE id_usu = $2` | Cambio de rol |
 | `incrementLoginAttempts(id, n)` | `UPDATE ... SET intentos_fallidos = $1` | Incrementa contador |
 | `blockUser(id, n)` | `UPDATE ... SET bloqueado_hasta = '9999-...'` | Bloqueo indefinido |
 | `resetLoginAttempts(id)` | `UPDATE ... SET intentos_fallidos = 0` | Reset tras login ok |
 | `unlock(id)` | `UPDATE ... SET intentos_fallidos = 0, bloqueado_hasta = NULL` | Desbloqueo por admin |
+| `createResetToken(id, token, exp)` | `INSERT INTO reset_tokens ...` | Guarda token de recuperación |
+| `findResetToken(token)` | `SELECT ... WHERE token = $1 AND usado = false AND expira_en > NOW()` | Valida token |
+| `markTokenAsUsed(token)` | `UPDATE reset_tokens SET usado = true` | Invalida token usado |
+| `updatePassword(id, hash)` | `UPDATE Cliente SET password_usu = $1` | Actualiza contraseña |
 
 ### 7.6 `src/services/authService.js` — Lógica JWT
 
@@ -319,10 +354,15 @@ Orquesta el flujo de cada endpoint. Delega queries al repository y tokens al ser
 | `login` | `POST /login` | Valida credenciales, aplica política de bloqueo, emite tokens |
 | `register` | `POST /register` | Verifica email único, hashea password, crea usuario |
 | `refresh` | `POST /refresh` | Rota el refresh token, emite nuevos tokens |
-| `logout` | `POST /logout` | Agrega token a blacklist, limpia cookies |
-| `unlockUser` | `PATCH /users/:id/unlock` | Resetea bloqueo de cuenta (solo admin) |
-| `getUsers` | `GET /users` | Lista paginada de usuarios (solo admin) |
+| `logout` | `POST /logout` | Agrega token a blacklist Redis, limpia cookies |
+| `getUsers` | `GET /users` | Lista paginada de usuarios activos (solo admin) |
 | `getMe` | `GET /me` | Perfil del usuario autenticado |
+| `unlockUser` | `PATCH /users/:id/unlock` | Resetea bloqueo de cuenta (solo admin) |
+| `updateUser` | `PATCH /users/:id` | Actualiza nombre, correo o teléfono (solo admin) |
+| `deleteUser` | `DELETE /users/:id` | Soft delete — no puede eliminarse a sí mismo |
+| `updateRole` | `PATCH /users/:id/role` | Cambia rol — no puede cambiar el propio |
+| `forgotPassword` | `POST /forgot-password` | Genera token y envía email via Resend. Siempre 200 |
+| `resetPassword` | `POST /reset-password` | Valida token, actualiza contraseña, invalida token |
 
 ---
 
@@ -419,14 +459,18 @@ Los endpoints protegidos requieren el token en una de estas formas:
 
 | Método | Ruta | Auth | Descripción |
 |---|---|---|---|
-| `GET` | `/api/users/health` | No | Estado del servicio |
 | `POST` | `/api/auth/login` | No | Iniciar sesión |
 | `POST` | `/api/auth/register` | Admin | Registrar usuario |
 | `POST` | `/api/auth/refresh` | Cookie | Renovar tokens |
 | `POST` | `/api/auth/logout` | Sí | Cerrar sesión |
 | `GET` | `/api/auth/me` | Sí | Perfil propio |
 | `GET` | `/api/auth/users?page=1&limit=20` | Admin | Lista paginada |
+| `PATCH` | `/api/auth/users/:id` | Admin | Actualizar nombre/correo/teléfono |
+| `DELETE` | `/api/auth/users/:id` | Admin | Eliminar usuario (soft delete) |
 | `PATCH` | `/api/auth/users/:id/unlock` | Admin | Desbloquear cuenta |
+| `PATCH` | `/api/auth/users/:id/role` | Admin | Asignar rol |
+| `POST` | `/api/auth/forgot-password` | No | Solicitar recuperación de contraseña |
+| `POST` | `/api/auth/reset-password` | No | Restablecer contraseña con token |
 
 ### Respuesta de `GET /api/auth/users` (paginada)
 
@@ -477,9 +521,20 @@ Los endpoints protegidos requieren el token en una de estas formas:
 - **Access Token:** Expira en 10 minutos, firmado con `JWT_SECRET`
 - **Refresh Token:** Expira en 7 días, firmado con `JWT_REFRESH_SECRET`
 - **Rotación:** Al hacer refresh, el token anterior se invalida en la blacklist
-- **Blacklist:** `Set` en memoria en `authMiddleware.js`
+- **Blacklist:** Redis con TTL automático via `ioredis`. En tests usa stub en memoria.
 
-> ⚠️ La blacklist se pierde al reiniciar. Para producción crítica, usar Redis.
+### Soft Delete (HU44)
+- Los usuarios eliminados no se borran de la BD (`activo = false`)
+- Preserva integridad referencial con `Factura` y `Ventas`
+- Todos los `findAll` y `findById` filtran `WHERE activo = true`
+- Un admin no puede eliminarse a sí mismo
+
+### Recuperación de Contraseña (HU05)
+- Token seguro generado con `crypto.randomUUID()`
+- Expira en **15 minutos**, almacenado en tabla `reset_tokens`
+- Enviado por email via **Resend SDK**
+- Siempre responde 200 para evitar **user enumeration attacks**
+- El token se marca como `usado = true` tras utilizarse (no reutilizable)
 
 ### Política de Bloqueo de Cuentas (HU04)
 - Máximo **5 intentos fallidos** consecutivos
@@ -510,21 +565,27 @@ Helmet agrega automáticamente:
 - **Jest** como framework de testing
 - **Supertest** para simular requests HTTP sin levantar el servidor
 
-### Cobertura (16 tests)
+### Cobertura (48 tests)
 
 | Suite | Tests |
 |---|---|
-| `POST /api/auth/login` | 7 casos: faltan campos, usuario no existe, bloqueado, contraseña incorrecta, bloqueo en 5 intentos, login web, login móvil |
-| `POST /api/auth/register` | 4 casos: sin token, campos faltantes, correo duplicado, registro exitoso |
-| `POST /api/auth/logout` | 2 casos: sin token, logout exitoso |
-| `GET /api/auth/users` | 3 casos: sin token, token de cliente, admin obtiene lista paginada |
+| `POST /api/auth/login` | 7 casos |
+| `POST /api/auth/register` | 4 casos |
+| `POST /api/auth/logout` | 2 casos |
+| `GET /api/auth/users` | 3 casos |
+| `POST /api/auth/refresh` | 5 casos |
+| `GET /api/auth/me` | 4 casos |
+| `PATCH /api/auth/users/:id` | 5 casos (HU43) |
+| `DELETE /api/auth/users/:id` | 5 casos (HU44) |
+| `PATCH /api/auth/users/:id/role` | 6 casos (HU45) |
+| `POST /api/auth/forgot-password` | 3 casos (HU05) |
+| `POST /api/auth/reset-password` | 4 casos (HU05) |
 
 ### Estrategia de Mock
 
-La DB se mockea completamente con `jest.mock('../config/db')`. Esto permite:
-- Tests sin base de datos real
-- Control preciso de respuestas
-- Tests rápidos (< 3 segundos)
+Dos mocks configurados al inicio del archivo:
+- `jest.mock('../config/db')` — Evita conexión real a PostgreSQL
+- `jest.mock('../config/emailService')` — Evita llamadas reales a Resend
 
 ```bash
 npm test          # Corre todos los tests
@@ -543,32 +604,33 @@ npm run test:watch  # Modo watch durante desarrollo
 
 ### `docker-compose.yml`
 
-Levanta 3 servicios:
+Levanta 4 servicios:
 - **`kiora-db`**: PostgreSQL 16 con healthcheck
+- **`kiora-redis`**: Redis 7 con healthcheck y volumen persistente
 - **`kiora-pgadmin`**: interfaz web en `http://localhost:5050`
-- **`users-service`**: construido desde el Dockerfile, espera que DB esté healthy
+- **`users-service`**: espera que DB y Redis estén healthy
 
 ```bash
 # Desde kiora-backend/
 docker compose up           # Levanta todo
 docker compose up -d        # En background
 docker compose down         # Detiene y elimina contenedores
+docker compose down -v      # Detiene y elimina incluyendo volúmenes
 ```
 
 ### GitHub Actions CI/CD
 
-Archivo: `.github/workflows/test.yml`
+Archivo: `.github/workflows/ci.yml`
 
 **Disparadores:**
 - Push a `main` o `develop`
 - Pull Request a `main` o `develop`
-- Solo cuando hay cambios en `kiora-backend/services/users-service/**`
 
 **Pasos del pipeline:**
 1. `actions/checkout@v4` — Descarga el código
 2. `actions/setup-node@v4` — Instala Node.js 20 con caché de npm
 3. `npm ci` — Instala dependencias de forma determinista
-4. `npm test` — Corre los 16 tests con variables de entorno mockeadas
+4. `npm test -- --forceExit` — Corre los 48 tests (sin BD real, todo mockeado)
 
 ---
 
@@ -588,10 +650,8 @@ Permite que las migraciones sean **idempotentes**: si se corren dos veces, no fa
 
 | Limitación | Impacto | Solución futura |
 |---|---|---|
-| Blacklist en memoria | Se pierde al reiniciar | Usar Redis |
-| Sin email de recuperación | Usuario no puede resetear password | Implementar flujo con SMTP |
 | Sin 2FA | Seguridad de login básica | TOTP con `speakeasy` |
-| Un solo servicio | No escalable horizontalmente con blacklist en memoria | Redis compartido entre instancias |
+| Blacklist en Redis (single node) | Si Redis cae, tokens revocados se aceptan temporalmente (fail-open) | Redis Sentinel o Cluster |
 
 ### Escalabilidad
-El servicio es **stateless** excepto por la blacklist en memoria. Para escalar horizontalmente (múltiples instancias), la blacklist debe moverse a Redis o a la base de datos.
+El servicio es **stateless** en cuanto a la lógica de negocio. La blacklist de tokens usa Redis, lo que permite escalar horizontalmente sin perder estado entre instancias.

@@ -1,17 +1,17 @@
 const bcrypt = require('bcrypt');
+const crypto = require('crypto');
 const userRepository = require('../repositories/userRepository');
 const authService = require('../services/authService');
 const { addToBlacklist } = require('../middleware/authMiddleware');
+const emailService = require('../config/emailService');
 const logger = require('../config/logger');
 
 const MAX_INTENTOS = 5;
 
-
-
 /**
  * authController
- * Responsabilidad única: orquesta la lógica de negocio de autenticación.
- * Usa logger para registrar eventos. Delega errores inesperados a next(error).
+ * Responsabilidad única: orquesta la lógica de negocio de autenticación y
+ * gestión de usuarios. Delega acceso a datos al repositorio y errores a next(error).
  */
 
 // POST /api/auth/register
@@ -220,4 +220,157 @@ const getMe = async (req, res, next) => {
     }
 };
 
-module.exports = { register, login, refresh, logout, unlockUser, getUsers, getMe };
+// PATCH /api/auth/users/:id — HU43
+const updateUser = async (req, res, next) => {
+    const { id } = req.params;
+
+    try {
+        const result = await userRepository.update(id, req.body);
+
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'Usuario no encontrado.' });
+        }
+
+        logger.info('Usuario actualizado', { id_usu: id, campos: Object.keys(req.body) });
+        res.status(200).json({ message: 'Usuario actualizado exitosamente.', usuario: result.rows[0] });
+    } catch (error) {
+        logger.error('Error al actualizar usuario', { error: error.message });
+        next(error);
+    }
+};
+
+// DELETE /api/auth/users/:id — HU44
+const deleteUser = async (req, res, next) => {
+    const { id } = req.params;
+
+    if (parseInt(id) === req.usuario.id_usu) {
+        return res.status(403).json({ error: 'No puedes eliminar tu propio usuario.' });
+    }
+
+    try {
+        const result = await userRepository.softDelete(id);
+
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'Usuario no encontrado.' });
+        }
+
+        logger.info('Usuario eliminado (soft delete)', { id_usu: id, eliminado_por: req.usuario.id_usu });
+        res.status(200).json({ message: 'Usuario eliminado exitosamente.' });
+    } catch (error) {
+        logger.error('Error al eliminar usuario', { error: error.message });
+        next(error);
+    }
+};
+
+// PATCH /api/auth/users/:id/role — HU45
+const updateRole = async (req, res, next) => {
+    const { id } = req.params;
+
+    if (parseInt(id) === req.usuario.id_usu) {
+        return res.status(403).json({ error: 'No puedes cambiar tu propio rol.' });
+    }
+
+    try {
+        const result = await userRepository.updateRole(id, req.body.rol_usu);
+
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'Usuario no encontrado.' });
+        }
+
+        logger.info('Rol actualizado', { id_usu: id, nuevo_rol: req.body.rol_usu, asignado_por: req.usuario.id_usu });
+        res.status(200).json({ message: 'Rol actualizado exitosamente.', usuario: result.rows[0] });
+    } catch (error) {
+        logger.error('Error al actualizar rol', { error: error.message });
+        next(error);
+    }
+};
+
+// POST /api/auth/forgot-password — HU05
+const forgotPassword = async (req, res, next) => {
+    const { correo_usu } = req.body;
+
+    try {
+        const result = await userRepository.findByEmail(correo_usu);
+
+        // Siempre responder 200 para no revelar si el correo existe (user enumeration)
+        if (result.rows.length === 0) {
+            return res.status(200).json({
+                message: 'Si el correo está registrado, recibirás un enlace de recuperación.'
+            });
+        }
+
+        const usuario = result.rows[0];
+        const token = crypto.randomUUID();
+        const expira_en = new Date(Date.now() + emailService.RESET_TOKEN_EXPIRY_MINUTES * 60 * 1000);
+
+        await userRepository.createResetToken(usuario.id_usu, token, expira_en);
+        await emailService.sendPasswordReset(correo_usu, token);
+
+        logger.info('Email de recuperación enviado', { id_usu: usuario.id_usu });
+        res.status(200).json({
+            message: 'Si el correo está registrado, recibirás un enlace de recuperación.'
+        });
+    } catch (error) {
+        logger.error('Error en forgot-password', { error: error.message });
+        next(error);
+    }
+};
+
+// POST /api/auth/reset-password — HU05
+const resetPassword = async (req, res, next) => {
+    const { token, new_password } = req.body;
+
+    try {
+        const result = await userRepository.findResetToken(token);
+
+        if (result.rows.length === 0) {
+            return res.status(400).json({ error: 'El token es inválido o ha expirado.' });
+        }
+
+        const { id_usu } = result.rows[0];
+        const hashedPassword = await bcrypt.hash(new_password, 10);
+
+        await Promise.all([
+            userRepository.updatePassword(id_usu, hashedPassword),
+            userRepository.markTokenAsUsed(token),
+        ]);
+
+        logger.info('Contraseña restablecida', { id_usu });
+        res.status(200).json({ message: 'Contraseña restablecida exitosamente.' });
+    } catch (error) {
+        logger.error('Error en reset-password', { error: error.message });
+        next(error);
+    }
+};
+
+// PATCH /api/auth/me/password — Cambiar contraseña (usuario autenticado)
+const changePassword = async (req, res, next) => {
+    const { current_password, new_password } = req.body;
+
+    try {
+        const result = await userRepository.findByIdWithPassword(req.usuario.id_usu);
+
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'Usuario no encontrado.' });
+        }
+
+        const usuario = result.rows[0];
+        const passwordValida = await bcrypt.compare(current_password, usuario.password_usu);
+
+        if (!passwordValida) {
+            logger.warn('Cambio de contraseña fallido: contraseña actual incorrecta', { id_usu: usuario.id_usu });
+            return res.status(401).json({ error: 'La contraseña actual es incorrecta.' });
+        }
+
+        const hashedPassword = await bcrypt.hash(new_password, 10);
+        await userRepository.updatePassword(usuario.id_usu, hashedPassword);
+
+        logger.info('Contraseña cambiada', { id_usu: usuario.id_usu });
+        res.status(200).json({ message: 'Contraseña actualizada exitosamente.' });
+    } catch (error) {
+        logger.error('Error en change-password', { error: error.message });
+        next(error);
+    }
+};
+
+module.exports = { register, login, refresh, logout, unlockUser, getUsers, getMe, updateUser, deleteUser, updateRole, forgotPassword, resetPassword, changePassword };

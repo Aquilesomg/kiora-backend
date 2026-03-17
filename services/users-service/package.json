@@ -8,9 +8,9 @@
     "start": "node src/index.js",
     "test": "jest --runInBand",
     "test:watch": "jest --watch --runInBand",
-    "migrate:up": "node-pg-migrate up --envPath .env",
-    "migrate:down": "node-pg-migrate down --envPath .env",
-    "migrate:create": "node-pg-migrate create --envPath .env"
+    "migrate:up": "node-pg-migrate up --envPath .env --migrations-dir src/db/migrations",
+    "migrate:down": "node-pg-migrate down --envPath .env --migrations-dir src/db/migrations",
+    "migrate:create": "node-pg-migrate create --envPath .env --migrations-dir src/db/migrations"
   },
   "keywords": [],
   "author": "",
@@ -29,6 +29,7 @@
     "jsonwebtoken": "^9.0.3",
     "node-pg-migrate": "^8.0.4",
     "pg": "^8.19.0",
+    "resend": "^6.9.3",
     "swagger-jsdoc": "^6.2.8",
     "swagger-ui-express": "^5.0.1",
     "winston": "^3.19.0"
