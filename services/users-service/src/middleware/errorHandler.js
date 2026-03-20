@@ -1,13 +1,6 @@
 const logger = require('../config/logger');
 
-/**
- * errorHandler
- * Middleware global de Express para errores.
- * DEBE registrarse al final de todos los middlewares en app.js.
- *
- * Los controllers llaman next(error) para llegar aquí.
- */
-const errorHandler = (err, req, res, next) => {
+const errorHandler = (err, req, res, _next) => {
     const status = err.status || 500;
     const message = err.message || 'Error interno del servidor.';
 

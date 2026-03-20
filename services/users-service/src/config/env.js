@@ -1,5 +1,21 @@
-require('dotenv').config();
+const fs = require('fs');
+const path = require('path');
 const logger = require('./logger');
+
+const resolveEnvPath = () => {
+    if (process.env.ENV_FILE) {
+        return process.env.ENV_FILE;
+    }
+
+    const localEnvPath = path.resolve(process.cwd(), '.env.local');
+    if (fs.existsSync(localEnvPath)) {
+        return localEnvPath;
+    }
+
+    return path.resolve(process.cwd(), '.env');
+};
+
+require('dotenv').config({ path: resolveEnvPath() });
 
 /**
  * env.js

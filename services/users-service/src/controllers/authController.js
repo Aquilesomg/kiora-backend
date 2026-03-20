@@ -1,18 +1,12 @@
 const bcrypt = require('bcrypt');
-const crypto = require('crypto');
 const userRepository = require('../repositories/userRepository');
 const authService = require('../services/authService');
+const blacklist = require('../config/blacklist');
 const { addToBlacklist } = require('../middleware/authMiddleware');
 const emailService = require('../config/emailService');
 const logger = require('../config/logger');
 
 const MAX_INTENTOS = 5;
-
-/**
- * authController
- * Responsabilidad única: orquesta la lógica de negocio de autenticación y
- * gestión de usuarios. Delega acceso a datos al repositorio y errores a next(error).
- */
 
 // POST /api/auth/register
 const register = async (req, res, next) => {
@@ -33,6 +27,9 @@ const register = async (req, res, next) => {
             id_usu: result.rows[0].id_usu
         });
     } catch (error) {
+        if (error.code === '23505') {
+            return res.status(409).json({ error: 'El correo ya está registrado.' });
+        }
         logger.error('Error al registrar usuario', { error: error.message });
         next(error);
     }
@@ -107,7 +104,7 @@ const login = async (req, res, next) => {
 };
 
 // POST /api/auth/refresh
-const refresh = async (req, res, next) => {
+const refresh = async (req, res, _next) => {
     const oldRefreshToken = req.cookies.kiora_refresh_token;
 
     if (!oldRefreshToken) {
@@ -115,6 +112,21 @@ const refresh = async (req, res, next) => {
     }
 
     try {
+        let isRevoked;
+        try {
+            isRevoked = await authService.isTokenRevoked(oldRefreshToken);
+        } catch (e) {
+            if (e.code === blacklist.BLACKLIST_UNAVAILABLE) {
+                return res.status(503).json({
+                    error: 'Servicio de sesiones temporalmente no disponible. Intenta de nuevo en unos segundos.',
+                });
+            }
+            throw e;
+        }
+        if (isRevoked) {
+            return res.status(401).json({ error: 'Refresh Token revocado. Inicia sesión nuevamente.' });
+        }
+
         const decoded = authService.verifyRefreshToken(oldRefreshToken);
         const result = await userRepository.findById(decoded.id_usu);
 
@@ -123,13 +135,26 @@ const refresh = async (req, res, next) => {
         }
 
         const usuario = result.rows[0];
+        const refreshSv = decoded.sv !== undefined && decoded.sv !== null ? decoded.sv : 0;
+        if (usuario.session_version !== refreshSv) {
+            return res.status(401).json({ error: 'La sesión ya no es válida. Inicia sesión nuevamente.' });
+        }
 
         if (usuario.bloqueado_hasta && new Date(usuario.bloqueado_hasta) > new Date()) {
             return res.status(423).json({ error: 'Cuenta bloqueada. Contacta al administrador.' });
         }
 
         // Rotación: invalidar el refresh token anterior
-        await addToBlacklist(oldRefreshToken);
+        try {
+            await addToBlacklist(oldRefreshToken);
+        } catch (e) {
+            if (e.code === blacklist.BLACKLIST_UNAVAILABLE) {
+                return res.status(503).json({
+                    error: 'Servicio de sesiones temporalmente no disponible. Intenta de nuevo en unos segundos.',
+                });
+            }
+            throw e;
+        }
 
         // Emitir nuevos tokens
         const newAccessToken = authService.generateAccessToken(usuario);
@@ -148,7 +173,21 @@ const refresh = async (req, res, next) => {
 
 // POST /api/auth/logout
 const logout = async (req, res) => {
-    await addToBlacklist(req.token);
+    try {
+        await addToBlacklist(req.token);
+        const refreshToken = req.cookies?.kiora_refresh_token;
+        if (refreshToken) {
+            await addToBlacklist(refreshToken);
+        }
+    } catch (e) {
+        if (e.code === blacklist.BLACKLIST_UNAVAILABLE) {
+            return res.status(503).json({
+                error: 'No se pudo cerrar la sesión en el servidor. Intenta de nuevo en unos segundos.',
+            });
+        }
+        logger.error('Error en logout al revocar tokens', { error: e.message });
+        return res.status(500).json({ error: 'Error interno al cerrar sesión.' });
+    }
     const clearOpts = authService.cookieOptions(0);
     res.clearCookie('token', clearOpts);
     res.clearCookie('kiora_refresh_token', clearOpts);
@@ -295,20 +334,21 @@ const forgotPassword = async (req, res, next) => {
         // Siempre responder 200 para no revelar si el correo existe (user enumeration)
         if (result.rows.length === 0) {
             return res.status(200).json({
-                message: 'Si el correo está registrado, recibirás un enlace de recuperación.'
+                message: 'Si el correo está registrado, recibirás un codigo de recuperacion.'
             });
         }
 
         const usuario = result.rows[0];
-        const token = crypto.randomUUID();
-        const expira_en = new Date(Date.now() + emailService.RESET_TOKEN_EXPIRY_MINUTES * 60 * 1000);
+        const code = String(Math.floor(Math.random() * 1000000)).padStart(6, '0');
+        const expira_en = new Date(Date.now() + emailService.RESET_CODE_EXPIRY_MINUTES * 60 * 1000);
 
-        await userRepository.createResetToken(usuario.id_usu, token, expira_en);
-        await emailService.sendPasswordReset(correo_usu, token);
+        await userRepository.invalidateActiveResetTokens(usuario.id_usu);
+        await userRepository.createResetToken(usuario.id_usu, code, expira_en);
+        await emailService.sendPasswordResetCode(correo_usu, code);
 
         logger.info('Email de recuperación enviado', { id_usu: usuario.id_usu });
         res.status(200).json({
-            message: 'Si el correo está registrado, recibirás un enlace de recuperación.'
+            message: 'Si el correo está registrado, recibirás un codigo de recuperacion.'
         });
     } catch (error) {
         logger.error('Error en forgot-password', { error: error.message });
@@ -316,26 +356,34 @@ const forgotPassword = async (req, res, next) => {
     }
 };
 
+// POST /api/auth/verify-reset-code — HU05
+const verifyResetCode = async (req, res, next) => {
+    const { correo_usu, code } = req.body;
+    try {
+        const result = await userRepository.findValidResetCodeByEmail(correo_usu, code);
+        if (result.rows.length === 0) {
+            return res.status(400).json({ error: 'El codigo es invalido o ha expirado.' });
+        }
+        return res.status(200).json({ message: 'Codigo verificado correctamente.' });
+    } catch (error) {
+        logger.error('Error en verify-reset-code', { error: error.message });
+        next(error);
+    }
+};
+
 // POST /api/auth/reset-password — HU05
 const resetPassword = async (req, res, next) => {
-    const { token, new_password } = req.body;
+    const { correo_usu, code, new_password } = req.body;
 
     try {
-        const result = await userRepository.findResetToken(token);
+        const hashedPassword = await bcrypt.hash(new_password, 10);
+        const outcome = await userRepository.resetPasswordWithCode(correo_usu, code, hashedPassword);
 
-        if (result.rows.length === 0) {
-            return res.status(400).json({ error: 'El token es inválido o ha expirado.' });
+        if (!outcome.ok) {
+            return res.status(400).json({ error: 'El codigo es invalido o ha expirado.' });
         }
 
-        const { id_usu } = result.rows[0];
-        const hashedPassword = await bcrypt.hash(new_password, 10);
-
-        await Promise.all([
-            userRepository.updatePassword(id_usu, hashedPassword),
-            userRepository.markTokenAsUsed(token),
-        ]);
-
-        logger.info('Contraseña restablecida', { id_usu });
+        logger.info('Contraseña restablecida', { id_usu: outcome.id_usu });
         res.status(200).json({ message: 'Contraseña restablecida exitosamente.' });
     } catch (error) {
         logger.error('Error en reset-password', { error: error.message });
@@ -365,12 +413,33 @@ const changePassword = async (req, res, next) => {
         const hashedPassword = await bcrypt.hash(new_password, 10);
         await userRepository.updatePassword(usuario.id_usu, hashedPassword);
 
+        const clearOpts = authService.cookieOptions(0);
+        res.clearCookie('token', clearOpts);
+        res.clearCookie('kiora_refresh_token', clearOpts);
+
         logger.info('Contraseña cambiada', { id_usu: usuario.id_usu });
-        res.status(200).json({ message: 'Contraseña actualizada exitosamente.' });
+        res.status(200).json({
+            message: 'Contraseña actualizada exitosamente. Inicia sesión de nuevo en todos los dispositivos.',
+        });
     } catch (error) {
         logger.error('Error en change-password', { error: error.message });
         next(error);
     }
 };
 
-module.exports = { register, login, refresh, logout, unlockUser, getUsers, getMe, updateUser, deleteUser, updateRole, forgotPassword, resetPassword, changePassword };
+module.exports = {
+    register,
+    login,
+    refresh,
+    logout,
+    unlockUser,
+    getUsers,
+    getMe,
+    updateUser,
+    deleteUser,
+    updateRole,
+    forgotPassword,
+    verifyResetCode,
+    resetPassword,
+    changePassword,
+};

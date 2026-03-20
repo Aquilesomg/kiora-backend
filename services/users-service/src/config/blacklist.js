@@ -1,29 +1,27 @@
 const Redis = require('ioredis');
 
-/**
- * blacklist.js
- * Almacena tokens JWT revocados en Redis usando TTL automático.
- *
- * Clave:  "bl:<firma_del_token>"
- * Valor:  "1"  (solo nos importa la existencia de la clave)
- * TTL:    segundos restantes hasta que el token expire naturalmente.
- *
- * Cuando el token expira en JWT, Redis borra la clave solo.
- * La blacklist nunca crece indefinidamente.
- *
- * En tests (NODE_ENV=test) usa un stub en memoria para no
- * requerir un servidor Redis corriendo.
- */
+const BLACKLIST_UNAVAILABLE = 'BLACKLIST_UNAVAILABLE';
 
-// ── Stub en memoria para tests ────────────────────────────────────────────────
+const isBlacklistFailOpen = () => {
+    const raw = process.env.BLACKLIST_FAIL_OPEN;
+    if (raw === undefined || raw === '') return true;
+    return !['false', '0', 'no', 'off'].includes(String(raw).toLowerCase());
+};
+
+const blacklistUnavailableError = (message) => {
+    const err = new Error(message || 'Servicio de revocación de sesiones no disponible.');
+    err.code = BLACKLIST_UNAVAILABLE;
+    return err;
+};
+
 class InMemoryBlacklist {
     constructor() { this._set = new Set(); }
     async set(key) { this._set.add(key); }
     async exists(key) { return this._set.has(key) ? 1 : 0; }
+    async clear() { this._set.clear(); }
     async quit() { }
 }
 
-// ── Selección del cliente según entorno ───────────────────────────────────────
 let client;
 
 if (process.env.NODE_ENV === 'test') {
@@ -33,16 +31,13 @@ if (process.env.NODE_ENV === 'test') {
         host: process.env.REDIS_HOST || 'localhost',
         port: parseInt(process.env.REDIS_PORT) || 6379,
         password: process.env.REDIS_PASSWORD || undefined,
-        // Reintentos con backoff para no crashear si Redis tarda en arrancar
         retryStrategy: (times) => Math.min(times * 100, 3000),
         lazyConnect: true,
-        // Configuración para fail-fast:
         maxRetriesPerRequest: 0,
         enableOfflineQueue: false,
     });
 
     client.on('error', (err) => {
-        // Reducir el ruido si simplemente no hay servidor Redis (ECONNREFUSED)
         if (err.code !== 'ECONNREFUSED') {
             console.error('[Redis blacklist] Error de conexión:', err.message);
         }
@@ -76,7 +71,7 @@ const _ttl = (token) => {
         const remaining = payload.exp - Math.floor(Date.now() / 1000);
         return Math.max(remaining, 1);
     } catch {
-        return 600; // fallback: 10 minutos
+        return 600;
     }
 };
 
@@ -100,6 +95,9 @@ const add = async (token) => {
         if (!err.message.includes("Stream isn't writeable") && !err.message.includes("max retries")) {
             console.error('[Redis blacklist] Error al agregar token:', err.message);
         }
+        if (!isBlacklistFailOpen()) {
+            throw blacklistUnavailableError();
+        }
     }
 };
 
@@ -118,9 +116,44 @@ const has = async (token) => {
         if (!err.message.includes("Stream isn't writeable") && !err.message.includes("max retries")) {
             console.error('[Redis blacklist] Error al verificar token:', err.message);
         }
-        // Fail-open: si Redis está caído, no bloqueamos el acceso
+        if (!isBlacklistFailOpen()) {
+            throw blacklistUnavailableError();
+        }
         return false;
     }
 };
 
-module.exports = { add, has, client };
+/**
+ * Comprueba conectividad con Redis (readiness). En tests no hace nada.
+ * @returns {Promise<void>}
+ */
+const ping = async () => {
+    if (process.env.NODE_ENV === 'test') return;
+    try {
+        await client.ping();
+    } catch (err) {
+        if (!isBlacklistFailOpen()) {
+            throw blacklistUnavailableError(err.message);
+        }
+        throw err;
+    }
+};
+
+/**
+ * Solo para tests: limpia el estado en memoria entre casos.
+ */
+const resetForTests = async () => {
+    if (process.env.NODE_ENV === 'test' && typeof client.clear === 'function') {
+        await client.clear();
+    }
+};
+
+module.exports = {
+    add,
+    has,
+    ping,
+    client,
+    resetForTests,
+    BLACKLIST_UNAVAILABLE,
+    isBlacklistFailOpen,
+};

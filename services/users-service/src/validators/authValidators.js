@@ -1,10 +1,17 @@
 const Joi = require('joi');
 
-/**
- * authValidators
- * Esquemas Joi para las rutas de autenticación y gestión de usuarios.
- * Centraliza las reglas de validación.
- */
+const strongPasswordField = Joi.string()
+    .min(8)
+    .pattern(/[A-Z]/, 'uppercase')
+    .pattern(/[a-z]/, 'lowercase')
+    .pattern(/[0-9]/, 'number')
+    .pattern(/[@$!%*?&_#^\-.]/, 'special')
+    .required()
+    .messages({
+        'any.required': 'La contraseña es obligatoria.',
+        'string.min': 'La contraseña debe tener al menos 8 caracteres.',
+        'string.pattern.name': 'La contraseña debe incluir al menos una letra mayúscula, una minúscula, un número y un carácter especial (@$!%*?&_#^-.).',
+    });
 
 const loginSchema = Joi.object({
     correo_usu: Joi.string().email().required().messages({
@@ -25,10 +32,7 @@ const registerSchema = Joi.object({
         'string.email': 'El correo no tiene un formato válido.',
         'any.required': 'El correo es obligatorio.',
     }),
-    password: Joi.string().min(6).required().messages({
-        'any.required': 'La contraseña es obligatoria.',
-        'string.min': 'La contraseña debe tener al menos 6 caracteres.',
-    }),
+    password: strongPasswordField,
     rol_usu: Joi.string().valid('admin', 'cliente').default('cliente'),
     tel_usu: Joi.string().max(20).optional().allow('', null),
 });
@@ -62,15 +66,28 @@ const forgotPasswordSchema = Joi.object({
     }),
 });
 
-// HU05 — Restablecer contraseña con token
+const resetCodeSchemaField = Joi.string().pattern(/^\d{6}$/).required().messages({
+    'string.pattern.base': 'El codigo debe tener 6 digitos.',
+    'any.required': 'El codigo es obligatorio.',
+});
+
+// HU05 — Verificar código OTP antes de restablecer
+const verifyResetCodeSchema = Joi.object({
+    correo_usu: Joi.string().email().required().messages({
+        'string.email': 'El correo no tiene un formato válido.',
+        'any.required': 'El correo es obligatorio.',
+    }),
+    code: resetCodeSchemaField,
+});
+
+// HU05 — Restablecer contraseña con código OTP
 const resetPasswordSchema = Joi.object({
-    token: Joi.string().required().messages({
-        'any.required': 'El token es obligatorio.',
+    correo_usu: Joi.string().email().required().messages({
+        'string.email': 'El correo no tiene un formato válido.',
+        'any.required': 'El correo es obligatorio.',
     }),
-    new_password: Joi.string().min(6).required().messages({
-        'any.required': 'La nueva contraseña es obligatoria.',
-        'string.min': 'La nueva contraseña debe tener al menos 6 caracteres.',
-    }),
+    code: resetCodeSchemaField,
+    new_password: strongPasswordField,
 });
 
 // Cambiar contraseña estando autenticado
@@ -78,11 +95,21 @@ const changePasswordSchema = Joi.object({
     current_password: Joi.string().required().messages({
         'any.required': 'La contraseña actual es obligatoria.',
     }),
-    new_password: Joi.string().min(6).invalid(Joi.ref('current_password')).required().messages({
+    new_password: strongPasswordField.invalid(Joi.ref('current_password')).messages({
         'any.required': 'La nueva contraseña es obligatoria.',
-        'string.min': 'La nueva contraseña debe tener al menos 6 caracteres.',
+        'string.min': 'La nueva contraseña debe tener al menos 8 caracteres.',
+        'string.pattern.name': 'La contraseña debe incluir al menos una letra mayúscula, una minúscula, un número y un carácter especial (@$!%*?&_#^-.).',
         'any.invalid': 'La nueva contraseña no puede ser igual a la actual.',
     }),
 });
 
-module.exports = { loginSchema, registerSchema, updateUserSchema, updateRoleSchema, forgotPasswordSchema, resetPasswordSchema, changePasswordSchema };
+module.exports = {
+    loginSchema,
+    registerSchema,
+    updateUserSchema,
+    updateRoleSchema,
+    forgotPasswordSchema,
+    verifyResetCodeSchema,
+    resetPasswordSchema,
+    changePasswordSchema,
+};

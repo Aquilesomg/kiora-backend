@@ -3,13 +3,14 @@ const bcrypt = require('bcrypt');
 
 // ─── Mock de la base de datos ANTES de importar la app ───────────────────────
 jest.mock('../config/db', () => ({
-    query: jest.fn()
+    query: jest.fn(),
+    connect: jest.fn(),
 }));
 
-// ─── Mock de emailService para evitar llamadas reales a Resend ───────────────
+// ─── Mock de emailService para evitar llamadas reales a SMTP ───────────────
 jest.mock('../config/emailService', () => ({
-    sendPasswordReset: jest.fn().mockResolvedValue(undefined),
-    RESET_TOKEN_EXPIRY_MINUTES: 15,
+    sendPasswordResetCode: jest.fn().mockResolvedValue(undefined),
+    RESET_CODE_EXPIRY_MINUTES: 15,
 }));
 
 // ─── Variables de entorno para tests ────────────────────────────────────────
@@ -18,10 +19,16 @@ process.env.JWT_REFRESH_SECRET = 'test_refresh_secret';
 process.env.NODE_ENV = 'test';
 
 const db = require('../config/db');
+const blacklist = require('../config/blacklist');
 const app = require('../app'); // ← importamos la app completa (con helmet y errorHandler)
 
 // ─── Helper: crear un hash de contraseña ────────────────────────────────────
 const hashPassword = async (pass) => bcrypt.hash(pass, 10);
+
+/** Primera query en rutas con verifyToken: comprobación de session_version */
+const mockSessionVersionOnce = (sv = 0) => {
+    db.query.mockResolvedValueOnce({ rows: [{ session_version: sv }] });
+};
 
 // ════════════════════════════════════════════════════════════════════════════
 // POST /api/auth/login
@@ -129,7 +136,7 @@ describe('POST /api/auth/register', () => {
     beforeAll(async () => {
         const jwt = require('jsonwebtoken');
         adminToken = jwt.sign(
-            { id_usu: 99, correo_usu: 'admin@test.com', rol_usu: 'admin' },
+            { id_usu: 99, correo_usu: 'admin@test.com', rol_usu: 'admin', sv: 0 },
             process.env.JWT_SECRET,
             { expiresIn: '10m' }
         );
@@ -143,6 +150,7 @@ describe('POST /api/auth/register', () => {
     });
 
     test('400 – faltan campos obligatorios', async () => {
+        mockSessionVersionOnce(0);
         const res = await request(app)
             .post('/api/auth/register')
             .set('Authorization', `Bearer ${adminToken}`)
@@ -152,6 +160,7 @@ describe('POST /api/auth/register', () => {
     });
 
     test('409 – correo ya registrado', async () => {
+        mockSessionVersionOnce(0);
         db.query.mockResolvedValueOnce({ rows: [{ id_usu: 5 }] });
 
         const res = await request(app)
@@ -164,6 +173,7 @@ describe('POST /api/auth/register', () => {
     });
 
     test('201 – registro exitoso', async () => {
+        mockSessionVersionOnce(0);
         db.query
             .mockResolvedValueOnce({ rows: [] })
             .mockResolvedValueOnce({ rows: [{ id_usu: 10 }] });
@@ -183,6 +193,11 @@ describe('POST /api/auth/register', () => {
 // ════════════════════════════════════════════════════════════════════════════
 describe('POST /api/auth/logout', () => {
 
+    beforeEach(async () => {
+        jest.clearAllMocks();
+        await blacklist.resetForTests();
+    });
+
     test('401 – sin token', async () => {
         const res = await request(app).post('/api/auth/logout');
         expect(res.statusCode).toBe(401);
@@ -190,7 +205,8 @@ describe('POST /api/auth/logout', () => {
 
     test('200 – logout exitoso', async () => {
         const jwt = require('jsonwebtoken');
-        const token = jwt.sign({ id_usu: 1, correo_usu: 'r@test.com', rol_usu: 'cliente' }, process.env.JWT_SECRET, { expiresIn: '10m' });
+        mockSessionVersionOnce(0);
+        const token = jwt.sign({ id_usu: 1, correo_usu: 'r@test.com', rol_usu: 'cliente', sv: 0 }, process.env.JWT_SECRET, { expiresIn: '10m' });
 
         const res = await request(app)
             .post('/api/auth/logout')
@@ -198,6 +214,35 @@ describe('POST /api/auth/logout', () => {
 
         expect(res.statusCode).toBe(200);
         expect(res.body.message).toMatch(/cerrada exitosamente/i);
+    });
+
+    test('200 – logout revoca también el refresh token', async () => {
+        const jwt = require('jsonwebtoken');
+        mockSessionVersionOnce(0);
+        const accessToken = jwt.sign(
+            { id_usu: 1, correo_usu: 'r@test.com', rol_usu: 'cliente', sv: 0 },
+            process.env.JWT_SECRET,
+            { expiresIn: '10m' }
+        );
+        const refreshToken = jwt.sign(
+            { id_usu: 1, correo_usu: 'r@test.com', rol_usu: 'cliente', sv: 0 },
+            process.env.JWT_REFRESH_SECRET,
+            { expiresIn: '7d' }
+        );
+
+        const logoutRes = await request(app)
+            .post('/api/auth/logout')
+            .set('Authorization', `Bearer ${accessToken}`)
+            .set('Cookie', `kiora_refresh_token=${refreshToken}`);
+
+        expect(logoutRes.statusCode).toBe(200);
+
+        const refreshRes = await request(app)
+            .post('/api/auth/refresh')
+            .set('Cookie', `kiora_refresh_token=${refreshToken}`);
+
+        expect(refreshRes.statusCode).toBe(401);
+        expect(refreshRes.body.error).toMatch(/revocado/i);
     });
 });
 
@@ -215,7 +260,8 @@ describe('GET /api/auth/users', () => {
 
     test('403 – token de cliente (no admin)', async () => {
         const jwt = require('jsonwebtoken');
-        const clienteToken = jwt.sign({ id_usu: 2, rol_usu: 'cliente' }, process.env.JWT_SECRET, { expiresIn: '10m' });
+        mockSessionVersionOnce(0);
+        const clienteToken = jwt.sign({ id_usu: 2, rol_usu: 'cliente', sv: 0 }, process.env.JWT_SECRET, { expiresIn: '10m' });
 
         const res = await request(app)
             .get('/api/auth/users')
@@ -226,7 +272,8 @@ describe('GET /api/auth/users', () => {
 
     test('200 – admin obtiene lista de usuarios', async () => {
         const jwt = require('jsonwebtoken');
-        const adminToken = jwt.sign({ id_usu: 99, rol_usu: 'admin' }, process.env.JWT_SECRET, { expiresIn: '10m' });
+        mockSessionVersionOnce(0);
+        const adminToken = jwt.sign({ id_usu: 99, rol_usu: 'admin', sv: 0 }, process.env.JWT_SECRET, { expiresIn: '10m' });
 
         db.query
             .mockResolvedValueOnce({ rows: [{ id_usu: 1, nom_usu: 'Ruben', correo_usu: 'r@test.com' }] })
@@ -247,7 +294,10 @@ describe('GET /api/auth/users', () => {
 // ════════════════════════════════════════════════════════════════════════════
 describe('POST /api/auth/refresh', () => {
 
-    beforeEach(() => jest.clearAllMocks());
+    beforeEach(async () => {
+        jest.clearAllMocks();
+        await blacklist.resetForTests();
+    });
 
     test('401 – sin cookie de refresh token', async () => {
         const res = await request(app).post('/api/auth/refresh');
@@ -267,7 +317,7 @@ describe('POST /api/auth/refresh', () => {
     test('401 – usuario no existe en la BD', async () => {
         const jwt = require('jsonwebtoken');
         const refreshToken = jwt.sign(
-            { id_usu: 999, correo_usu: 'ghost@test.com', rol_usu: 'cliente' },
+            { id_usu: 999, correo_usu: 'ghost@test.com', rol_usu: 'cliente', sv: 0 },
             process.env.JWT_REFRESH_SECRET,
             { expiresIn: '7d' }
         );
@@ -285,14 +335,14 @@ describe('POST /api/auth/refresh', () => {
     test('423 – cuenta bloqueada al hacer refresh', async () => {
         const jwt = require('jsonwebtoken');
         const refreshToken = jwt.sign(
-            { id_usu: 1, correo_usu: 'r@test.com', rol_usu: 'cliente' },
+            { id_usu: 1, correo_usu: 'r@test.com', rol_usu: 'cliente', sv: 0 },
             process.env.JWT_REFRESH_SECRET,
             { expiresIn: '7d' }
         );
 
         const bloqueado_hasta = new Date(Date.now() + 10 * 60000);
         db.query.mockResolvedValueOnce({
-            rows: [{ id_usu: 1, nom_usu: 'Ruben', correo_usu: 'r@test.com', rol_usu: 'cliente', bloqueado_hasta }]
+            rows: [{ id_usu: 1, nom_usu: 'Ruben', correo_usu: 'r@test.com', rol_usu: 'cliente', bloqueado_hasta, session_version: 0 }]
         });
 
         const res = await request(app)
@@ -306,13 +356,13 @@ describe('POST /api/auth/refresh', () => {
     test('200 – refresh exitoso: devuelve nuevo access token y rota cookie', async () => {
         const jwt = require('jsonwebtoken');
         const refreshToken = jwt.sign(
-            { id_usu: 1, correo_usu: 'r@test.com', rol_usu: 'cliente' },
+            { id_usu: 1, correo_usu: 'r@test.com', rol_usu: 'cliente', sv: 0 },
             process.env.JWT_REFRESH_SECRET,
             { expiresIn: '7d' }
         );
 
         db.query.mockResolvedValueOnce({
-            rows: [{ id_usu: 1, nom_usu: 'Ruben', correo_usu: 'r@test.com', rol_usu: 'cliente', bloqueado_hasta: null }]
+            rows: [{ id_usu: 1, nom_usu: 'Ruben', correo_usu: 'r@test.com', rol_usu: 'cliente', bloqueado_hasta: null, session_version: 0 }]
         });
 
         const res = await request(app)
@@ -325,6 +375,52 @@ describe('POST /api/auth/refresh', () => {
         const cookies = res.headers['set-cookie'];
         expect(cookies).toBeDefined();
         expect(cookies.some(c => c.startsWith('kiora_refresh_token='))).toBe(true);
+    });
+
+    test('401 – refresh token ya revocado', async () => {
+        const jwt = require('jsonwebtoken');
+        const refreshToken = jwt.sign(
+            { id_usu: 1, correo_usu: 'r@test.com', rol_usu: 'cliente', sv: 0 },
+            process.env.JWT_REFRESH_SECRET,
+            { expiresIn: '7d' }
+        );
+
+        db.query.mockResolvedValueOnce({
+            rows: [{ id_usu: 1, nom_usu: 'Ruben', correo_usu: 'r@test.com', rol_usu: 'cliente', bloqueado_hasta: null, session_version: 0 }]
+        });
+
+        const firstRes = await request(app)
+            .post('/api/auth/refresh')
+            .set('Cookie', `kiora_refresh_token=${refreshToken}`);
+
+        expect(firstRes.statusCode).toBe(200);
+
+        const secondRes = await request(app)
+            .post('/api/auth/refresh')
+            .set('Cookie', `kiora_refresh_token=${refreshToken}`);
+
+        expect(secondRes.statusCode).toBe(401);
+        expect(secondRes.body.error).toMatch(/revocado/i);
+    });
+
+    test('401 – refresh con session_version obsoleta (p. ej. tras restablecer contraseña)', async () => {
+        const jwt = require('jsonwebtoken');
+        const refreshToken = jwt.sign(
+            { id_usu: 1, correo_usu: 'r@test.com', rol_usu: 'cliente', sv: 0 },
+            process.env.JWT_REFRESH_SECRET,
+            { expiresIn: '7d' }
+        );
+
+        db.query.mockResolvedValueOnce({
+            rows: [{ id_usu: 1, nom_usu: 'Ruben', correo_usu: 'r@test.com', rol_usu: 'cliente', bloqueado_hasta: null, session_version: 1 }]
+        });
+
+        const res = await request(app)
+            .post('/api/auth/refresh')
+            .set('Cookie', `kiora_refresh_token=${refreshToken}`);
+
+        expect(res.statusCode).toBe(401);
+        expect(res.body.error).toMatch(/ya no es válida|inicia sesión/i);
     });
 });
 
@@ -340,10 +436,10 @@ describe('GET /api/auth/me', () => {
         expect(res.statusCode).toBe(401);
     });
 
-    test('404 – usuario no encontrado en la BD', async () => {
+    test('401 – usuario del token inactivo o inexistente (sesión inválida)', async () => {
         const jwt = require('jsonwebtoken');
         const token = jwt.sign(
-            { id_usu: 999, correo_usu: 'ghost@test.com', rol_usu: 'cliente' },
+            { id_usu: 999, correo_usu: 'ghost@test.com', rol_usu: 'cliente', sv: 0 },
             process.env.JWT_SECRET,
             { expiresIn: '10m' }
         );
@@ -354,18 +450,19 @@ describe('GET /api/auth/me', () => {
             .get('/api/auth/me')
             .set('Authorization', `Bearer ${token}`);
 
-        expect(res.statusCode).toBe(404);
-        expect(res.body.error).toMatch(/usuario no encontrado/i);
+        expect(res.statusCode).toBe(401);
+        expect(res.body.error).toMatch(/no válido|inicia sesión/i);
     });
 
     test('200 – devuelve perfil del usuario autenticado', async () => {
         const jwt = require('jsonwebtoken');
         const token = jwt.sign(
-            { id_usu: 3, correo_usu: 'perfil@test.com', rol_usu: 'cliente' },
+            { id_usu: 3, correo_usu: 'perfil@test.com', rol_usu: 'cliente', sv: 0 },
             process.env.JWT_SECRET,
             { expiresIn: '10m' }
         );
 
+        mockSessionVersionOnce(0);
         db.query.mockResolvedValueOnce({
             rows: [{ id_usu: 3, nom_usu: 'Ruben', correo_usu: 'perfil@test.com', rol_usu: 'cliente', tel_usu: null }]
         });
@@ -383,11 +480,12 @@ describe('GET /api/auth/me', () => {
     test('200 – acceso por cookie (cliente web)', async () => {
         const jwt = require('jsonwebtoken');
         const token = jwt.sign(
-            { id_usu: 2, correo_usu: 'web@test.com', rol_usu: 'cliente' },
+            { id_usu: 2, correo_usu: 'web@test.com', rol_usu: 'cliente', sv: 0 },
             process.env.JWT_SECRET,
             { expiresIn: '10m' }
         );
 
+        mockSessionVersionOnce(0);
         db.query.mockResolvedValueOnce({
             rows: [{ id_usu: 2, nom_usu: 'WebUser', correo_usu: 'web@test.com', rol_usu: 'cliente', tel_usu: null }]
         });
@@ -410,7 +508,7 @@ describe('PATCH /api/auth/users/:id', () => {
     beforeAll(() => {
         const jwt = require('jsonwebtoken');
         adminToken = jwt.sign(
-            { id_usu: 99, correo_usu: 'admin@test.com', rol_usu: 'admin' },
+            { id_usu: 99, correo_usu: 'admin@test.com', rol_usu: 'admin', sv: 0 },
             process.env.JWT_SECRET,
             { expiresIn: '10m' }
         );
@@ -425,7 +523,8 @@ describe('PATCH /api/auth/users/:id', () => {
 
     test('403 – token de cliente (no admin)', async () => {
         const jwt = require('jsonwebtoken');
-        const clienteToken = jwt.sign({ id_usu: 2, rol_usu: 'cliente' }, process.env.JWT_SECRET, { expiresIn: '10m' });
+        mockSessionVersionOnce(0);
+        const clienteToken = jwt.sign({ id_usu: 2, rol_usu: 'cliente', sv: 0 }, process.env.JWT_SECRET, { expiresIn: '10m' });
 
         const res = await request(app)
             .patch('/api/auth/users/1')
@@ -436,6 +535,7 @@ describe('PATCH /api/auth/users/:id', () => {
     });
 
     test('400 – body vacío (sin campos para actualizar)', async () => {
+        mockSessionVersionOnce(0);
         const res = await request(app)
             .patch('/api/auth/users/1')
             .set('Authorization', `Bearer ${adminToken}`)
@@ -445,6 +545,7 @@ describe('PATCH /api/auth/users/:id', () => {
     });
 
     test('404 – usuario no encontrado', async () => {
+        mockSessionVersionOnce(0);
         db.query.mockResolvedValueOnce({ rows: [] });
 
         const res = await request(app)
@@ -457,6 +558,7 @@ describe('PATCH /api/auth/users/:id', () => {
     });
 
     test('200 – actualización exitosa', async () => {
+        mockSessionVersionOnce(0);
         db.query.mockResolvedValueOnce({
             rows: [{ id_usu: 1, nom_usu: 'Nuevo Nombre', correo_usu: 'r@test.com', rol_usu: 'cliente', tel_usu: null }]
         });
@@ -481,7 +583,7 @@ describe('DELETE /api/auth/users/:id', () => {
         const jwt = require('jsonwebtoken');
         // id_usu: 99 para probar el guard de auto-eliminación
         adminToken = jwt.sign(
-            { id_usu: 99, correo_usu: 'admin@test.com', rol_usu: 'admin' },
+            { id_usu: 99, correo_usu: 'admin@test.com', rol_usu: 'admin', sv: 0 },
             process.env.JWT_SECRET,
             { expiresIn: '10m' }
         );
@@ -496,7 +598,8 @@ describe('DELETE /api/auth/users/:id', () => {
 
     test('403 – token de cliente (no admin)', async () => {
         const jwt = require('jsonwebtoken');
-        const clienteToken = jwt.sign({ id_usu: 2, rol_usu: 'cliente' }, process.env.JWT_SECRET, { expiresIn: '10m' });
+        mockSessionVersionOnce(0);
+        const clienteToken = jwt.sign({ id_usu: 2, rol_usu: 'cliente', sv: 0 }, process.env.JWT_SECRET, { expiresIn: '10m' });
 
         const res = await request(app)
             .delete('/api/auth/users/1')
@@ -506,6 +609,7 @@ describe('DELETE /api/auth/users/:id', () => {
     });
 
     test('403 – admin intenta eliminarse a sí mismo', async () => {
+        mockSessionVersionOnce(0);
         const res = await request(app)
             .delete('/api/auth/users/99')
             .set('Authorization', `Bearer ${adminToken}`);
@@ -515,6 +619,7 @@ describe('DELETE /api/auth/users/:id', () => {
     });
 
     test('404 – usuario no encontrado', async () => {
+        mockSessionVersionOnce(0);
         db.query.mockResolvedValueOnce({ rows: [] });
 
         const res = await request(app)
@@ -526,6 +631,7 @@ describe('DELETE /api/auth/users/:id', () => {
     });
 
     test('200 – soft delete exitoso', async () => {
+        mockSessionVersionOnce(0);
         db.query.mockResolvedValueOnce({ rows: [{ id_usu: 1 }] });
 
         const res = await request(app)
@@ -546,7 +652,7 @@ describe('PATCH /api/auth/users/:id/role', () => {
     beforeAll(() => {
         const jwt = require('jsonwebtoken');
         adminToken = jwt.sign(
-            { id_usu: 99, correo_usu: 'admin@test.com', rol_usu: 'admin' },
+            { id_usu: 99, correo_usu: 'admin@test.com', rol_usu: 'admin', sv: 0 },
             process.env.JWT_SECRET,
             { expiresIn: '10m' }
         );
@@ -561,7 +667,8 @@ describe('PATCH /api/auth/users/:id/role', () => {
 
     test('403 – token de cliente (no admin)', async () => {
         const jwt = require('jsonwebtoken');
-        const clienteToken = jwt.sign({ id_usu: 2, rol_usu: 'cliente' }, process.env.JWT_SECRET, { expiresIn: '10m' });
+        mockSessionVersionOnce(0);
+        const clienteToken = jwt.sign({ id_usu: 2, rol_usu: 'cliente', sv: 0 }, process.env.JWT_SECRET, { expiresIn: '10m' });
 
         const res = await request(app)
             .patch('/api/auth/users/1/role')
@@ -572,6 +679,7 @@ describe('PATCH /api/auth/users/:id/role', () => {
     });
 
     test('400 – rol inválido', async () => {
+        mockSessionVersionOnce(0);
         const res = await request(app)
             .patch('/api/auth/users/1/role')
             .set('Authorization', `Bearer ${adminToken}`)
@@ -581,6 +689,7 @@ describe('PATCH /api/auth/users/:id/role', () => {
     });
 
     test('403 – admin intenta cambiar su propio rol', async () => {
+        mockSessionVersionOnce(0);
         const res = await request(app)
             .patch('/api/auth/users/99/role')
             .set('Authorization', `Bearer ${adminToken}`)
@@ -591,6 +700,7 @@ describe('PATCH /api/auth/users/:id/role', () => {
     });
 
     test('404 – usuario no encontrado', async () => {
+        mockSessionVersionOnce(0);
         db.query.mockResolvedValueOnce({ rows: [] });
 
         const res = await request(app)
@@ -603,6 +713,7 @@ describe('PATCH /api/auth/users/:id/role', () => {
     });
 
     test('200 – cambio de rol exitoso', async () => {
+        mockSessionVersionOnce(0);
         db.query.mockResolvedValueOnce({
             rows: [{ id_usu: 1, nom_usu: 'Ruben', correo_usu: 'r@test.com', rol_usu: 'admin' }]
         });
@@ -644,12 +755,13 @@ describe('POST /api/auth/forgot-password', () => {
 
         expect(res.statusCode).toBe(200);
         expect(res.body.message).toMatch(/si el correo está registrado/i);
-        expect(emailService.sendPasswordReset).not.toHaveBeenCalled();
+        expect(emailService.sendPasswordResetCode).not.toHaveBeenCalled();
     });
 
     test('200 – correo existe: guarda token y envía email', async () => {
         db.query
             .mockResolvedValueOnce({ rows: [{ id_usu: 1, correo_usu: 'r@test.com' }] }) // findByEmail
+            .mockResolvedValueOnce({ rows: [] }) // invalidateActiveResetTokens
             .mockResolvedValueOnce({ rows: [] }); // createResetToken
 
         const res = await request(app)
@@ -658,7 +770,39 @@ describe('POST /api/auth/forgot-password', () => {
 
         expect(res.statusCode).toBe(200);
         expect(res.body.message).toMatch(/si el correo está registrado/i);
-        expect(emailService.sendPasswordReset).toHaveBeenCalledWith('r@test.com', expect.any(String));
+        expect(emailService.sendPasswordResetCode).toHaveBeenCalledWith(
+            'r@test.com',
+            expect.stringMatching(/^\d{6}$/)
+        );
+    });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// POST /api/auth/verify-reset-code — HU05
+// ════════════════════════════════════════════════════════════════════════════
+describe('POST /api/auth/verify-reset-code', () => {
+    beforeEach(() => jest.clearAllMocks());
+
+    test('400 – código inválido o expirado', async () => {
+        db.query.mockResolvedValueOnce({ rows: [] });
+
+        const res = await request(app)
+            .post('/api/auth/verify-reset-code')
+            .send({ correo_usu: 'r@test.com', code: '123456' });
+
+        expect(res.statusCode).toBe(400);
+        expect(res.body.error).toMatch(/codigo es invalido/i);
+    });
+
+    test('200 – código válido', async () => {
+        db.query.mockResolvedValueOnce({ rows: [{ id_usu: 1 }] });
+
+        const res = await request(app)
+            .post('/api/auth/verify-reset-code')
+            .send({ correo_usu: 'r@test.com', code: '123456' });
+
+        expect(res.statusCode).toBe(200);
+        expect(res.body.message).toMatch(/verificado/i);
     });
 });
 
@@ -680,31 +824,38 @@ describe('POST /api/auth/reset-password', () => {
     test('400 – contraseña muy corta', async () => {
         const res = await request(app)
             .post('/api/auth/reset-password')
-            .send({ token: 'some-token', new_password: '123' });
+            .send({ correo_usu: 'r@test.com', code: '123456', new_password: '123' });
 
         expect(res.statusCode).toBe(400);
     });
 
     test('400 – token inválido o expirado', async () => {
-        db.query.mockResolvedValueOnce({ rows: [] }); // findResetToken → vacío
+        const clientQuery = jest.fn()
+            .mockResolvedValueOnce({ rows: [] }) // BEGIN
+            .mockResolvedValueOnce({ rows: [] }) // SELECT … FOR UPDATE → vacío
+            .mockResolvedValueOnce({ rows: [] }); // ROLLBACK
+        db.connect.mockResolvedValueOnce({ query: clientQuery, release: jest.fn() });
 
         const res = await request(app)
             .post('/api/auth/reset-password')
-            .send({ token: 'token-invalido', new_password: 'nueva123' });
+            .send({ correo_usu: 'r@test.com', code: '123456', new_password: 'nueva123' });
 
         expect(res.statusCode).toBe(400);
-        expect(res.body.error).toMatch(/inválido o ha expirado/i);
+        expect(res.body.error).toMatch(/invalido o ha expirado/i);
     });
 
     test('200 – contraseña restablecida exitosamente', async () => {
-        db.query
-            .mockResolvedValueOnce({ rows: [{ id: 1, id_usu: 5, expira_en: new Date(Date.now() + 60000) }] }) // findResetToken
-            .mockResolvedValueOnce({ rows: [] }) // updatePassword
-            .mockResolvedValueOnce({ rows: [] }); // markTokenAsUsed
+        const clientQuery = jest.fn()
+            .mockResolvedValueOnce({ rows: [] }) // BEGIN
+            .mockResolvedValueOnce({ rows: [{ id: 1, id_usu: 5 }] }) // SELECT … FOR UPDATE
+            .mockResolvedValueOnce({ rows: [{ id_usu: 5 }] }) // UPDATE Cliente
+            .mockResolvedValueOnce({ rows: [] }) // UPDATE reset_tokens
+            .mockResolvedValueOnce({ rows: [] }); // COMMIT
+        db.connect.mockResolvedValueOnce({ query: clientQuery, release: jest.fn() });
 
         const res = await request(app)
             .post('/api/auth/reset-password')
-            .send({ token: 'token-valido-uuid', new_password: 'nueva123' });
+            .send({ correo_usu: 'r@test.com', code: '123456', new_password: 'nueva123' });
 
         expect(res.statusCode).toBe(200);
         expect(res.body.message).toMatch(/restablecida exitosamente/i);
@@ -720,13 +871,16 @@ describe('PATCH /api/auth/me/password', () => {
     beforeAll(() => {
         const jwt = require('jsonwebtoken');
         clienteToken = jwt.sign(
-            { id_usu: 7, correo_usu: 'cliente@test.com', rol_usu: 'cliente' },
+            { id_usu: 7, correo_usu: 'cliente@test.com', rol_usu: 'cliente', sv: 0 },
             process.env.JWT_SECRET,
             { expiresIn: '10m' }
         );
     });
 
-    beforeEach(() => jest.clearAllMocks());
+    beforeEach(async () => {
+        jest.clearAllMocks();
+        await blacklist.resetForTests();
+    });
 
     test('401 – sin token', async () => {
         const res = await request(app)
@@ -737,6 +891,7 @@ describe('PATCH /api/auth/me/password', () => {
     });
 
     test('400 – faltan campos obligatorios', async () => {
+        mockSessionVersionOnce(0);
         const res = await request(app)
             .patch('/api/auth/me/password')
             .set('Authorization', `Bearer ${clienteToken}`)
@@ -746,6 +901,7 @@ describe('PATCH /api/auth/me/password', () => {
     });
 
     test('400 – nueva contraseña con menos de 6 caracteres', async () => {
+        mockSessionVersionOnce(0);
         const res = await request(app)
             .patch('/api/auth/me/password')
             .set('Authorization', `Bearer ${clienteToken}`)
@@ -755,6 +911,7 @@ describe('PATCH /api/auth/me/password', () => {
     });
 
     test('400 – nueva contraseña igual a la actual', async () => {
+        mockSessionVersionOnce(0);
         const res = await request(app)
             .patch('/api/auth/me/password')
             .set('Authorization', `Bearer ${clienteToken}`)
@@ -766,6 +923,7 @@ describe('PATCH /api/auth/me/password', () => {
 
     test('401 – contraseña actual incorrecta', async () => {
         const hash = await hashPassword('correcta123');
+        mockSessionVersionOnce(0);
         db.query.mockResolvedValueOnce({
             rows: [{ id_usu: 7, password_usu: hash, activo: true }]
         });
@@ -781,6 +939,7 @@ describe('PATCH /api/auth/me/password', () => {
 
     test('200 – contraseña actualizada exitosamente', async () => {
         const hash = await hashPassword('actual123');
+        mockSessionVersionOnce(0);
         db.query
             .mockResolvedValueOnce({ rows: [{ id_usu: 7, password_usu: hash, activo: true }] }) // findByIdWithPassword
             .mockResolvedValueOnce({ rows: [] }); // updatePassword
@@ -792,5 +951,48 @@ describe('PATCH /api/auth/me/password', () => {
 
         expect(res.statusCode).toBe(200);
         expect(res.body.message).toMatch(/actualizada exitosamente/i);
+    });
+
+    test('401 – tras cambiar contraseña el access token anterior queda revocado', async () => {
+        const hash = await hashPassword('actual123');
+        mockSessionVersionOnce(0);
+        db.query
+            .mockResolvedValueOnce({ rows: [{ id_usu: 7, password_usu: hash, activo: true }] })
+            .mockResolvedValueOnce({ rows: [] });
+
+        const changeRes = await request(app)
+            .patch('/api/auth/me/password')
+            .set('Authorization', `Bearer ${clienteToken}`)
+            .send({ current_password: 'actual123', new_password: 'nueva123' });
+
+        expect(changeRes.statusCode).toBe(200);
+
+        mockSessionVersionOnce(1);
+
+        const meRes = await request(app)
+            .get('/api/auth/me')
+            .set('Authorization', `Bearer ${clienteToken}`);
+
+        expect(meRes.statusCode).toBe(401);
+        expect(meRes.body.error).toMatch(/ya no es válida|inicia sesión/i);
+    });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// Health / readiness
+// ════════════════════════════════════════════════════════════════════════════
+describe('GET /api/users/health y /ready', () => {
+    test('health responde 200', async () => {
+        const res = await request(app).get('/api/users/health');
+        expect(res.statusCode).toBe(200);
+        expect(res.body.status).toMatch(/OK/i);
+    });
+
+    test('ready responde 200 cuando Postgres responde (Redis omitido en test)', async () => {
+        db.query.mockResolvedValueOnce({ rows: [{ '?column?': 1 }] });
+        const res = await request(app).get('/api/users/ready');
+        expect(res.statusCode).toBe(200);
+        expect(res.body.status).toBe('ready');
+        expect(res.body.checks).toEqual({ postgres: true, redis: true });
     });
 });

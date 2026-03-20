@@ -11,7 +11,18 @@ const findByEmail = (correo_usu) =>
 
 const findById = (id_usu) =>
     db.query(
-        'SELECT id_usu, nom_usu, correo_usu, rol_usu, bloqueado_hasta FROM Cliente WHERE id_usu = $1 AND activo = true',
+        `SELECT id_usu, nom_usu, correo_usu, rol_usu, bloqueado_hasta, session_version
+         FROM Cliente WHERE id_usu = $1 AND activo = true`,
+        [id_usu]
+    );
+
+/**
+ * Versión de sesión para invalidar JWT tras cambio/restablecimiento de contraseña.
+ * @param {number} id_usu
+ */
+const getSessionVersion = (id_usu) =>
+    db.query(
+        'SELECT session_version FROM Cliente WHERE id_usu = $1 AND activo = true',
         [id_usu]
     );
 
@@ -59,15 +70,14 @@ const create = (nom_usu, correo_usu, hashedPassword, rol_usu, tel_usu) =>
  * @param {{ nom_usu?: string, correo_usu?: string, tel_usu?: string }} fields
  */
 const update = (id_usu, fields) => {
-    const allowed = ['nom_usu', 'correo_usu', 'tel_usu'];
+    const allowed = ['nom_usu', 'correo_usu', 'tel_usu', rol_usu];
     const entries = Object.entries(fields).filter(([key]) => allowed.includes(key));
     const setClauses = entries.map(([key], i) => `${key} = $${i + 1}`).join(', ');
-    const values = entries.map(([, val]) => val);
     return db.query(
         `UPDATE Cliente SET ${setClauses}
-         WHERE id_usu = $${values.length + 1} AND activo = true
+         WHERE id_usu = $${entries.length + 1} AND activo = true
          RETURNING id_usu, nom_usu, correo_usu, rol_usu, tel_usu`,
-        [...values, id_usu]
+        [...entries.map(([, val]) => val), id_usu]
     );
 };
 
@@ -131,6 +141,12 @@ const createResetToken = (id_usu, token, expira_en) =>
         [id_usu, token, expira_en]
     );
 
+const invalidateActiveResetTokens = (id_usu) =>
+    db.query(
+        'UPDATE reset_tokens SET usado = true WHERE id_usu = $1 AND usado = false',
+        [id_usu]
+    );
+
 /**
  * Busca un token válido (no usado y no expirado).
  * @param {string} token
@@ -141,6 +157,19 @@ const findResetToken = (token) =>
          FROM reset_tokens rt
          WHERE rt.token = $1 AND rt.usado = false AND rt.expira_en > NOW()`,
         [token]
+    );
+
+const findValidResetCodeByEmail = (correo_usu, code) =>
+    db.query(
+        `SELECT rt.id, rt.id_usu, rt.expira_en
+         FROM reset_tokens rt
+         JOIN Cliente c ON c.id_usu = rt.id_usu
+         WHERE c.correo_usu = $1
+           AND c.activo = true
+           AND rt.token = $2
+           AND rt.usado = false
+           AND rt.expira_en > NOW()`,
+        [correo_usu, code]
     );
 
 /**
@@ -160,13 +189,114 @@ const markTokenAsUsed = (token) =>
  */
 const updatePassword = (id_usu, hashedPassword) =>
     db.query(
-        'UPDATE Cliente SET password_usu = $1 WHERE id_usu = $2',
+        `UPDATE Cliente
+         SET password_usu = $1, session_version = session_version + 1
+         WHERE id_usu = $2 RETURNING id_usu`,
         [hashedPassword, id_usu]
     );
+
+/**
+ * Restablece contraseña y marca el token de recuperación en una sola transacción.
+ * Usa FOR UPDATE sobre el token para evitar carreras con el mismo token.
+ * @param {string} plainToken
+ * @param {string} hashedPassword
+ * @returns {Promise<{ ok: true, id_usu: number } | { ok: false }>}
+ */
+const resetPasswordWithToken = async (plainToken, hashedPassword) => {
+    const client = await db.connect();
+    try {
+        await client.query('BEGIN');
+        const sel = await client.query(
+            `SELECT id_usu FROM reset_tokens
+             WHERE token = $1 AND usado = false AND expira_en > NOW()
+             FOR UPDATE`,
+            [plainToken]
+        );
+        if (sel.rows.length === 0) {
+            await client.query('ROLLBACK');
+            return { ok: false };
+        }
+        const { id_usu } = sel.rows[0];
+        const userUpd =         await client.query(
+            `UPDATE Cliente
+             SET password_usu = $1, session_version = session_version + 1
+             WHERE id_usu = $2 AND activo = true
+             RETURNING id_usu`,
+            [hashedPassword, id_usu]
+        );
+        if (userUpd.rows.length === 0) {
+            await client.query('ROLLBACK');
+            return { ok: false };
+        }
+        await client.query(
+            'UPDATE reset_tokens SET usado = true WHERE token = $1',
+            [plainToken]
+        );
+        await client.query('COMMIT');
+        return { ok: true, id_usu };
+    } catch (err) {
+        try {
+            await client.query('ROLLBACK');
+        } catch {
+            /* ignore */
+        }
+        throw err;
+    } finally {
+        client.release();
+    }
+};
+
+const resetPasswordWithCode = async (correo_usu, code, hashedPassword) => {
+    const client = await db.connect();
+    try {
+        await client.query('BEGIN');
+        const sel = await client.query(
+            `SELECT rt.id, rt.id_usu
+             FROM reset_tokens rt
+             JOIN Cliente c ON c.id_usu = rt.id_usu
+             WHERE c.correo_usu = $1
+               AND c.activo = true
+               AND rt.token = $2
+               AND rt.usado = false
+               AND rt.expira_en > NOW()
+             FOR UPDATE`,
+            [correo_usu, code]
+        );
+        if (sel.rows.length === 0) {
+            await client.query('ROLLBACK');
+            return { ok: false };
+        }
+        const { id, id_usu } = sel.rows[0];
+        const userUpd = await client.query(
+            `UPDATE Cliente
+             SET password_usu = $1, session_version = session_version + 1
+             WHERE id_usu = $2 AND activo = true
+             RETURNING id_usu`,
+            [hashedPassword, id_usu]
+        );
+        if (userUpd.rows.length === 0) {
+            await client.query('ROLLBACK');
+            return { ok: false };
+        }
+        await client.query('UPDATE reset_tokens SET usado = true WHERE id = $1', [id]);
+        await client.query('COMMIT');
+        return { ok: true, id_usu };
+    } catch (err) {
+        try {
+            await client.query('ROLLBACK');
+        } catch {
+            /* ignore */
+        }
+        throw err;
+    } finally {
+        client.release();
+    }
+};
 
 module.exports = {
     findByEmail,
     findById,
+    getSessionVersion,
     findByIdWithPassword,
     findProfile,
     findAll,
@@ -180,7 +310,11 @@ module.exports = {
     resetLoginAttempts,
     unlock,
     createResetToken,
+    invalidateActiveResetTokens,
     findResetToken,
+    findValidResetCodeByEmail,
     markTokenAsUsed,
     updatePassword,
+    resetPasswordWithToken,
+    resetPasswordWithCode,
 };

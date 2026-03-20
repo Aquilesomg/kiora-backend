@@ -4,6 +4,9 @@ const helmet = require('helmet');
 const cookieParser = require('cookie-parser');
 const swaggerUi = require('swagger-ui-express');
 const swaggerSpec = require('./config/swagger');
+const pool = require('./config/db');
+const blacklist = require('./config/blacklist');
+const logger = require('./config/logger');
 const authRoutes = require('./routes/authRoutes');
 const errorHandler = require('./middleware/errorHandler');
 
@@ -29,9 +32,27 @@ app.use(cors({
 app.use(cookieParser());
 app.use(express.json());
 
-// ── Health check ───────────────────────────────────────────────────────────
+// ── Health check (liveness: proceso vivo) ─────────────────────────────────
 app.get('/api/users/health', (req, res) => {
     res.status(200).json({ status: 'OK', message: 'Users Service Kiora está corriendo' });
+});
+
+// ── Readiness (dependencias: Postgres + Redis) ─────────────────────────────
+app.get('/api/users/ready', async (req, res) => {
+    try {
+        await pool.query('SELECT 1');
+        await blacklist.ping();
+        res.status(200).json({
+            status: 'ready',
+            checks: { postgres: true, redis: true },
+        });
+    } catch (err) {
+        logger.warn('Readiness check falló', { error: err.message });
+        res.status(503).json({
+            status: 'not_ready',
+            error: 'Una o más dependencias no responden.',
+        });
+    }
 });
 
 // ── Documentación Swagger ──────────────────────────────────────────────────

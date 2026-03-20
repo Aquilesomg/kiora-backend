@@ -55,13 +55,13 @@ services:
     container_name: kiora_users_service
     restart: unless-stopped
     ports:
-      - "3002:3001"
+      - "3001:3001"
     env_file:
-      - ./services/users-service/.env
+      - ./services/users-service/.env.docker
     environment:
-      DB_HOST: kiora-db        # Nombre del servicio Docker, no localhost
-      DB_PORT: 5432            # Puerto interno del contenedor
-      REDIS_HOST: kiora-redis  # Nombre del servicio Redis en Docker
+      DB_HOST: kiora-db # Nombre del servicio Docker, no localhost
+      DB_PORT: 5432 # Puerto interno del contenedor
+      REDIS_HOST: kiora-redis # Nombre del servicio Redis en Docker
       REDIS_PORT: 6379
     depends_on:
       kiora-db:

@@ -148,7 +148,7 @@ users-service/
 | `helmet` | ^8 | Cabeceras de seguridad HTTP |
 | `express-rate-limit` | ^8 | Rate limiting por IP |
 | `ioredis` | ^5 | Cliente Redis (blacklist de tokens) |
-| `resend` | ^4 | Envío de emails transaccionales |
+| `nodemailer` | ^8 | Envío de emails transaccionales vía SMTP |
 | `joi` | ^17 | Validación de esquemas de datos |
 | `winston` | ^3 | Logger con niveles y transports |
 | `node-pg-migrate` | ^8 | Sistema de migraciones de base de datos |
@@ -183,7 +183,11 @@ Todas son validadas en `src/config/env.js` al arrancar. Si falta alguna, el proc
 | `REDIS_HOST` | No | Host de Redis | `localhost` |
 | `REDIS_PORT` | No | Puerto de Redis | `6379` |
 | `REDIS_PASSWORD` | No | Contraseña de Redis (si aplica) | — |
-| `RESEND_API_KEY` | No* | API key de Resend | `re_xxxx` |
+| `SMTP_HOST` | No* | Host SMTP | `smtp.gmail.com` |
+| `SMTP_PORT` | No* | Puerto SMTP | `587` |
+| `SMTP_USER` | No* | Usuario SMTP | `tu_usuario` |
+| `SMTP_PASS` | No* | Password SMTP | `tu_password` |
+| `SMTP_SECURE` | No* | SSL en SMTP (true/false) | `false` |
 | `FROM_EMAIL` | No* | Email remitente | `no-reply@kiora.com` |
 | `APP_URL` | No* | URL base del frontend | `http://localhost:3000` |
 | `CORS_ORIGIN` | No | Origen permitido para CORS | `http://localhost:3000` |
@@ -220,7 +224,7 @@ CREATE TABLE Cliente (
 CREATE TABLE reset_tokens (
     id        SERIAL PRIMARY KEY,
     id_usu    INT NOT NULL REFERENCES Cliente(id_usu),
-    token     VARCHAR(255) NOT NULL UNIQUE,
+    token     VARCHAR(255) NOT NULL,
     expira_en TIMESTAMP NOT NULL,          -- 15 minutos desde creación
     usado     BOOLEAN NOT NULL DEFAULT false,
     creado_en TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -235,6 +239,9 @@ src/db/migrations/
   002_add_lock_policy.sql         ← Agrega intentos_fallidos y bloqueado_hasta
   003_add_activo_to_cliente.sql   ← Agrega columna activo (soft delete)
   004_add_reset_tokens.sql        ← Crea tabla para recuperación de contraseña
+  005_add_unique_email_cliente.sql
+  006_add_session_version_to_cliente.sql
+  007_drop_unique_token_from_reset_tokens.sql ← Para OTP (códigos) ya no forzamos UNIQUE global
 ```
 
 **Comandos:**

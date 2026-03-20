@@ -1,12 +1,11 @@
 const jwt = require('jsonwebtoken');
 const blacklist = require('../config/blacklist');
+const userRepository = require('../repositories/userRepository');
 
-// Validación crítica: JWT_SECRET debe estar definido
 if (!process.env.JWT_SECRET) {
     throw new Error('JWT_SECRET no está definido en las variables de entorno. La aplicación no puede iniciar de forma segura.');
 }
 
-// HU02 – Blacklist de tokens revocados (Redis con TTL automático)
 const addToBlacklist = (token) => blacklist.add(token);
 
 const verifyToken = async (req, res, next) => {
@@ -26,13 +25,33 @@ const verifyToken = async (req, res, next) => {
     }
 
     // HU02 – Rechazar tokens revocados (logout)
-    if (await blacklist.has(token)) {
+    let isRevoked = false;
+    try {
+        isRevoked = await blacklist.has(token);
+    } catch (e) {
+        if (e.code === blacklist.BLACKLIST_UNAVAILABLE) {
+            return res.status(503).json({
+                error: 'Servicio de sesiones temporalmente no disponible. Intenta de nuevo en unos segundos.',
+            });
+        }
+        throw e;
+    }
+    if (isRevoked) {
         return res.status(401).json({ error: 'La sesión ha sido cerrada. Inicia sesión nuevamente.' });
     }
 
     try {
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
-        req.usuario = decoded; // { id_usu, correo_usu, rol_usu }
+        const tokenSv = decoded.sv !== undefined && decoded.sv !== null ? decoded.sv : 0;
+        const svResult = await userRepository.getSessionVersion(decoded.id_usu);
+        if (svResult.rows.length === 0) {
+            return res.status(401).json({ error: 'Usuario no válido. Inicia sesión nuevamente.' });
+        }
+        const currentSv = svResult.rows[0].session_version;
+        if (currentSv !== tokenSv) {
+            return res.status(401).json({ error: 'La sesión ya no es válida. Inicia sesión nuevamente.' });
+        }
+        req.usuario = decoded; // { id_usu, correo_usu, rol_usu, sv }
         req.token = token;     // guardar para el logout
         next();
     } catch (error) {

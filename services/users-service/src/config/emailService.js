@@ -1,57 +1,102 @@
-const { Resend } = require('resend');
+const nodemailer = require('nodemailer');
+const path = require('path');
 
 /**
  * emailService
- * Responsabilidad única: envío de correos electrónicos via Resend.
- * La instancia de Resend se crea de forma lazy para no fallar al iniciar
- * el servidor si RESEND_API_KEY no está configurada.
+ * Responsabilidad única: envío de correos electrónicos vía SMTP (Nodemailer).
+ * El transporter se crea de forma lazy para no fallar al iniciar el servidor
+ * si la configuración SMTP no está lista.
  */
 
 const FROM_EMAIL = process.env.FROM_EMAIL || 'no-reply@kiora.com';
-const RESET_TOKEN_EXPIRY_MINUTES = 15;
+const RESET_CODE_EXPIRY_MINUTES = 15;
+const LOGO_PATH = path.join(__dirname, '../assets/kiora_logo.png');
 
-/**
- * Devuelve la instancia de Resend. Se instancia la primera vez que se llama.
- * @throws {Error} si RESEND_API_KEY no está configurada
- */
-const getResendClient = () => {
-    if (!process.env.RESEND_API_KEY) {
-        throw new Error('RESEND_API_KEY no está configurada. Agrega la variable de entorno para enviar emails.');
+const getTransporter = () => {
+    if (!process.env.SMTP_HOST || !process.env.SMTP_PORT || !process.env.SMTP_USER || !process.env.SMTP_PASS) {
+        throw new Error('Configuración SMTP incompleta. Revisa SMTP_HOST, SMTP_PORT, SMTP_USER y SMTP_PASS.');
     }
-    return new Resend(process.env.RESEND_API_KEY);
-};
-
-/**
- * Envía el correo de recuperación de contraseña.
- * @param {string} correo_usu - Dirección de email del destinatario
- * @param {string} token - Token de recuperación
- */
-const sendPasswordReset = async (correo_usu, token) => {
-    const resend = getResendClient();
-    const resetLink = `${process.env.APP_URL}/reset-password?token=${token}`;
-
-    await resend.emails.send({
-        from: FROM_EMAIL,
-        to: correo_usu,
-        subject: 'Recuperación de contraseña — Kiora',
-        html: `
-            <h2>Recuperación de contraseña</h2>
-            <p>Recibiste este correo porque solicitaste restablecer tu contraseña.</p>
-            <p>Haz clic en el siguiente enlace para continuar. El enlace expira en <strong>${RESET_TOKEN_EXPIRY_MINUTES} minutos</strong>:</p>
-            <a href="${resetLink}" style="
-                display: inline-block;
-                padding: 12px 24px;
-                background-color: #4F46E5;
-                color: white;
-                text-decoration: none;
-                border-radius: 6px;
-                margin: 16px 0;
-            ">Restablecer contraseña</a>
-            <p>Si no solicitaste este cambio, ignora este correo.</p>
-            <hr />
-            <small>Este enlace expirará el ${new Date(Date.now() + RESET_TOKEN_EXPIRY_MINUTES * 60 * 1000).toLocaleString('es-CO')}.</small>
-        `,
+    return nodemailer.createTransport({
+        host: process.env.SMTP_HOST,
+        port: parseInt(process.env.SMTP_PORT, 10),
+        secure: String(process.env.SMTP_SECURE || 'false').toLowerCase() === 'true',
+        auth: {
+            user: process.env.SMTP_USER,
+            pass: process.env.SMTP_PASS,
+        },
     });
 };
 
-module.exports = { sendPasswordReset, RESET_TOKEN_EXPIRY_MINUTES };
+/**
+ * Envía el correo con código OTP de recuperación.
+ * @param {string} correo_usu - Dirección de email del destinatario
+ * @param {string} code - Código OTP de 6 dígitos
+ */
+const sendPasswordResetCode = async (correo_usu, code) => {
+    const transporter = getTransporter();
+
+    const htmlTemplate = `
+        <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f5f0eb; padding: 40px 20px; color: #333333;">
+            <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 10px; overflow: hidden; box-shadow: 0 4px 15px rgba(61,26,16,0.12);">
+
+                <!-- Header con logo -->
+                <div style="background-color: #3D1A10; padding: 28px 30px; text-align: center;">
+                    <img src="cid:kiora_logo" alt="Kiora" style="height: 52px; width: auto;" />
+                </div>
+
+                <!-- Franja decorativa -->
+                <div style="height: 4px; background: linear-gradient(to right, #C41E1E, #3D1A10);"></div>
+
+                <!-- Cuerpo -->
+                <div style="padding: 40px 36px;">
+                    <h2 style="color: #3D1A10; font-size: 22px; margin-top: 0; margin-bottom: 8px;">Recuperación de contraseña</h2>
+                    <p style="font-size: 15px; line-height: 1.6; color: #555555; margin-top: 0;">
+                        Hola,<br><br>
+                        Recibimos una solicitud para restablecer la contraseña de tu cuenta.
+                        Usa el siguiente código de seguridad para continuar:
+                    </p>
+
+                    <!-- Código OTP -->
+                    <div style="text-align: center; margin: 32px 0;">
+                        <span style="display: inline-block; font-size: 34px; font-weight: bold; letter-spacing: 10px; color: #3D1A10; background-color: #fdf5f0; padding: 16px 32px; border-radius: 8px; border: 2px dashed #C41E1E;">
+                            ${code}
+                        </span>
+                    </div>
+
+                    <p style="font-size: 15px; line-height: 1.5; color: #555555; text-align: center;">
+                        Este código expira en <strong style="color: #C41E1E;">${RESET_CODE_EXPIRY_MINUTES} minutos</strong>.
+                    </p>
+
+                    <hr style="border: none; border-top: 1px solid #eeeeee; margin: 32px 0;">
+
+                    <p style="font-size: 13px; line-height: 1.5; color: #999999; margin-bottom: 0;">
+                        Si no solicitaste este cambio, puedes ignorar este correo de forma segura.
+                        Tu contraseña no cambiará hasta que ingreses el código y crees una nueva.
+                    </p>
+                </div>
+
+                <!-- Footer -->
+                <div style="background-color: #3D1A10; padding: 14px 30px; text-align: center;">
+                    <p style="color: #c8a898; font-size: 12px; margin: 0;">© ${new Date().getFullYear()} Kiora. Todos los derechos reservados.</p>
+                </div>
+
+            </div>
+        </div>
+    `;
+
+    await transporter.sendMail({
+        from: FROM_EMAIL,
+        to: correo_usu,
+        subject: 'Código de recuperación - Kiora',
+        text: `Tu código de recuperación es: ${code}. Expira en ${RESET_CODE_EXPIRY_MINUTES} minutos. Si no solicitaste este cambio, ignora este correo.`,
+        html: htmlTemplate,
+        attachments: [
+            {
+                filename: 'kiora_logo.png',
+                path: LOGO_PATH,
+                cid: 'kiora_logo',
+            },
+        ],
+    });
+};
+module.exports = { sendPasswordResetCode, RESET_CODE_EXPIRY_MINUTES };

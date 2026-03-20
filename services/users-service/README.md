@@ -24,6 +24,12 @@ Levanta automáticamente:
 - pgAdmin en `http://localhost:5050`
 - Users Service en `http://localhost:3001`
 
+**Salud del servicio**
+- Liveness: `GET /api/users/health` (solo indica que el proceso responde).
+- Readiness: `GET /api/users/ready` (comprueba PostgreSQL y Redis; usar en balanceadores/orquestadores).
+
+En **producción** conviene `BLACKLIST_FAIL_OPEN=false` para no aceptar tráfico autenticado si Redis no permite verificar la blacklist (respuesta `503`).
+
 ---
 
 ## Opción B: Levantar manualmente
@@ -37,34 +43,21 @@ npm install
 
 ### 2. Configurar variables de entorno
 
+Usa **dos archivos** para no mezclar `localhost` con nombres de servicio Docker (`kiora-db`, `kiora-redis`):
+
 ```bash
-cp .env.example .env
+cp .env.example .env.local
+cp .env.example .env.docker
 ```
 
-Edita `.env` con tus valores:
+- **`.env.local`**: `npm run dev`, `npm start`, `npm run migrate:up` desde tu máquina.  
+  `DATABASE_URL` / `DB_HOST` apuntan a `localhost` (puerto `5433` si solo levantas Postgres con Compose).
+- **`.env.docker`**: lo usa `docker compose` para el contenedor `users-service`.  
+  Ahí van `kiora-db`, `kiora-redis` y `DATABASE_URL` con host `kiora-db`.
 
-```env
-PORT=3001
+**Orden de carga** (ver `src/config/env.js`): variable `ENV_FILE` → si existe `.env.local` → si no, `.env`.
 
-DB_USER=postgres
-DB_PASSWORD=rootpassword
-DB_HOST=localhost
-DB_PORT=5433
-DB_NAME=kiora
-
-JWT_SECRET=TuSecretoSuperSeguro
-JWT_REFRESH_SECRET=TuRefreshSecretoSuperSeguro
-
-REDIS_HOST=localhost
-REDIS_PORT=6379
-
-RESEND_API_KEY=re_xxxxxxxxxxxx
-FROM_EMAIL=no-reply@tudominio.com
-APP_URL=http://localhost:3000
-
-CORS_ORIGIN=http://localhost:3000
-NODE_ENV=development
-```
+**Si tenías un `.env` antiguo:** copia su contenido a `.env.local` (ajusta `DATABASE_URL` a `localhost`) y a `.env.docker` (host `kiora-db`), luego **elimina `.env`** para no confundirte con valores contradictorios.
 
 ### 3. Crear la base de datos
 
@@ -75,8 +68,20 @@ CREATE DATABASE kiora;
 ### 4. Correr las migraciones
 
 ```bash
-npm run migrate:up
+npm run migrate:up          # usa .env.local
+npm run migrate:up:docker   # usa .env.docker
 ```
+
+### 4b. Tests de migraciones (integración)
+
+Requieren **PostgreSQL accesible** con la misma configuración que `.env.local` (el script carga `dotenv` desde ahí). Ejecutan `node-pg-migrate up` y comprueban tablas, columnas e índices (001–006).
+
+```bash
+# Con la BD levantada (Docker o local)
+npm run test:migrations
+```
+
+En **GitHub Actions** hay un job `migrations-users-service` con Postgres 16 que corre esta suite en cada push/PR.
 
 ### 5. (Opcional) Crear usuarios de prueba
 
@@ -125,9 +130,15 @@ http://localhost:3001/api/docs
 ```bash
 npm run dev              # Servidor en modo desarrollo
 npm start                # Servidor en producción
-npm test                 # Correr todos los tests (54 tests)
-npm run migrate:up       # Aplicar migraciones pendientes
-npm run migrate:down     # Revertir la última migración
+npm test                 # Correr todos los tests
+npm run lint             # ESLint (src, sin warnings)
+npm run lint:fix         # ESLint con --fix
+npm run audit:ci         # npm audit --audit-level=high (uso en CI)
+npm run test:migrations  # Postgres real: aplica migraciones y valida esquema (usa .env.local)
+npm run migrate:up       # Aplicar migraciones pendientes (.env.local)
+npm run migrate:down     # Revertir la última migración (.env.local)
+npm run migrate:up:docker     # Aplicar migraciones usando .env.docker
+npm run migrate:down:docker   # Revertir migración usando .env.docker
 npm run migrate:create   # Crear nueva migración
 ```
 
@@ -165,9 +176,11 @@ src/
 │       ├── 001_schema_inicial.sql
 │       ├── 002_add_lock_policy.sql
 │       ├── 003_add_activo_to_cliente.sql
-│       └── 004_add_reset_tokens.sql
+│       ├── 004_add_reset_tokens.sql
+│       ├── 005_add_unique_email_cliente.sql
+│       └── 006_add_session_version_to_cliente.sql
 └── __tests__/
-    └── authRoutes.test.js  # 54 tests de integración
+    └── authRoutes.test.js  # tests HTTP (Jest + Supertest)
 ```
 
 ---
@@ -186,8 +199,13 @@ El servicio soporta **dos tipos de clientes**:
 
 El **Refresh Token** siempre va en cookie `HttpOnly`.
 
+Los JWT incluyen el claim **`sv` (session_version)** alineado con la columna `Cliente.session_version`. Al **restablecer** o **cambiar** contraseña se incrementa esa versión, invalidando **todos** los access y refresh tokens anteriores del usuario (además de blacklist en logout/rotación).
+
 ---
 
 ## CI/CD
 
-Tests automáticos con **GitHub Actions** en cada push a `main` o `develop`. Ver `.github/workflows/ci.yml`.
+**GitHub Actions** (push/PR a `main` y `develop`), ver `.github/workflows/ci.yml`:
+
+- **test-users-service**: ESLint, `npm audit`, tests HTTP (Jest + mocks).
+- **migrations-users-service**: Postgres 16 en servicio, `npm run test:migrations` (aplica SQL y valida esquema).

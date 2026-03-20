@@ -4,6 +4,8 @@ npm-debug.log
 
 # Archivos de entorno (Contraseñas, Puertos, Tokens)
 .env
+.env.local
+.env.docker
 .env.test
 .env.production
 

@@ -1,7 +1,6 @@
 const { Pool } = require('pg');
-require('dotenv').config();
+require('./env');
 
-// Creamos la conexión usando las variables de tu archivo .env
 const pool = new Pool({
     user: process.env.DB_USER,
     host: process.env.DB_HOST,
@@ -10,7 +9,6 @@ const pool = new Pool({
     port: process.env.DB_PORT,
 });
 
-// Probamos que la conexión funcione
 pool.connect((err, client, release) => {
     if (err) {
         return console.error('❌ Error conectando a PostgreSQL:', err.stack);

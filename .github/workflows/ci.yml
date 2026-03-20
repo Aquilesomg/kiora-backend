@@ -29,9 +29,63 @@ jobs:
       - name: Instalar dependencias
         run: npm ci
 
+      - name: ESLint
+        run: npm run lint
+
+      - name: npm audit (nivel high)
+        run: npm run audit:ci
+
       - name: Correr tests
         run: npm test -- --forceExit
         env:
           NODE_ENV: test
           JWT_SECRET: ci_test_secret
           JWT_REFRESH_SECRET: ci_test_refresh_secret
+
+  migrations-users-service:
+    name: Migraciones — users-service (Postgres)
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: kiora_migration_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d kiora_migration_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    defaults:
+      run:
+        working-directory: services/users-service
+
+    steps:
+      - name: Checkout código
+        uses: actions/checkout@v4
+
+      - name: Configurar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: services/users-service/package-lock.json
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Tests de migraciones (aplica SQL y valida esquema)
+        run: npm run test:migrations
+        env:
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/kiora_migration_ci
+          DB_HOST: localhost
+          DB_PORT: 5432
+          DB_USER: postgres
+          DB_PASSWORD: postgres
+          DB_NAME: kiora_migration_ci
+          RUN_MIGRATION_TESTS: 'true'

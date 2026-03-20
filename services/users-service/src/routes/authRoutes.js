@@ -3,10 +3,10 @@ const rateLimit = require('express-rate-limit');
 const router = express.Router();
 const { verifyToken, isAdmin } = require('../middleware/authMiddleware');
 const validate = require('../middleware/validate');
-const { loginSchema, registerSchema, updateUserSchema, updateRoleSchema, forgotPasswordSchema, resetPasswordSchema, changePasswordSchema } = require('../validators/authValidators');
+const { loginSchema, registerSchema, updateUserSchema, updateRoleSchema, forgotPasswordSchema, verifyResetCodeSchema, resetPasswordSchema, changePasswordSchema, changePasswordAdminSchema, updatePasswordAdminSchema } = require('../validators/authValidators');
 const {
     register, login, refresh, logout, unlockUser, getUsers, getMe,
-    updateUser, deleteUser, updateRole, forgotPassword, resetPassword, changePassword,
+    updateUser, deleteUser, updateRole, forgotPassword, verifyResetCode, resetPassword, changePassword, adminResetPassword
 } = require('../controllers/authController');
 
 const loginLimiter = rateLimit({
@@ -69,6 +69,9 @@ router.post('/login', loginLimiter, validate(loginSchema), login);
  *                 type: string
  *               password:
  *                 type: string
+ *                 minLength: 8
+ *                 description: "Mínimo 8 caracteres, una mayúscula, una minúscula, un número y un carácter especial (@$!%*?&_#^-.)"
+ *                 example: "MiPass1!"
  *               rol_usu:
  *                 type: string
  *                 enum: [admin, cliente]
@@ -85,6 +88,8 @@ router.post('/login', loginLimiter, validate(loginSchema), login);
  *         description: No es administrador.
  *       409:
  *         description: Correo ya registrado.
+ *       503:
+ *         description: Redis no disponible al validar blacklist del access token (BLACKLIST_FAIL_OPEN=false).
  */
 router.post('/register', verifyToken, isAdmin, validate(registerSchema), register);
 
@@ -96,11 +101,15 @@ router.post('/register', verifyToken, isAdmin, validate(registerSchema), registe
  *     tags: [Auth]
  *     responses:
  *       200:
- *         description: Nuevo access token generado.
+ *         description: Nuevo access token en body; nueva cookie de refresh emitida.
  *       401:
- *         description: No se proporcionó Refresh Token.
+ *         description: Sin cookie de refresh, refresh revocado, usuario inválido, sesión obsoleta (claim sv), etc.
  *       403:
- *         description: Refresh Token inválido o expirado.
+ *         description: Refresh JWT inválido o expirado.
+ *       423:
+ *         description: Cuenta bloqueada.
+ *       503:
+ *         description: Redis no disponible al comprobar/guardar revocación (BLACKLIST_FAIL_OPEN=false).
  */
 router.post('/refresh', refresh);
 
@@ -114,9 +123,11 @@ router.post('/refresh', refresh);
  *       - BearerAuth: []
  *     responses:
  *       200:
- *         description: Sesión cerrada exitosamente.
+ *         description: Sesión cerrada; access y refresh revocados en Redis.
  *       401:
- *         description: Token no proporcionado.
+ *         description: Token no proporcionado o inválido.
+ *       503:
+ *         description: No se pudo revocar en Redis (BLACKLIST_FAIL_OPEN=false).
  */
 router.post('/logout', verifyToken, logout);
 
@@ -148,6 +159,8 @@ router.post('/logout', verifyToken, logout);
  *         description: Token no proporcionado.
  *       403:
  *         description: No es administrador.
+ *       503:
+ *         description: Redis no disponible (BLACKLIST_FAIL_OPEN=false).
  */
 router.get('/users', verifyToken, isAdmin, getUsers);
 
@@ -170,6 +183,8 @@ router.get('/users', verifyToken, isAdmin, getUsers);
  *         description: Usuario desbloqueado.
  *       404:
  *         description: Usuario no encontrado.
+ *       503:
+ *         description: Redis no disponible (BLACKLIST_FAIL_OPEN=false).
  */
 router.patch('/users/:id/unlock', verifyToken, isAdmin, unlockUser);
 
@@ -184,8 +199,12 @@ router.patch('/users/:id/unlock', verifyToken, isAdmin, unlockUser);
  *     responses:
  *       200:
  *         description: Datos del usuario autenticado.
+ *       401:
+ *         description: Sin token, expirado, sesión revocada, claim sv desincronizado o usuario inactivo.
  *       404:
- *         description: Usuario no encontrado.
+ *         description: Perfil no encontrado (caso excepcional).
+ *       503:
+ *         description: Redis no disponible al comprobar blacklist (BLACKLIST_FAIL_OPEN=false).
  */
 router.get('/me', verifyToken, getMe);
 
@@ -223,6 +242,8 @@ router.get('/me', verifyToken, getMe);
  *         description: No puedes cambiar tu propio rol.
  *       404:
  *         description: Usuario no encontrado.
+ *       503:
+ *         description: Redis no disponible (BLACKLIST_FAIL_OPEN=false).
  */
 router.patch('/users/:id/role', verifyToken, isAdmin, validate(updateRoleSchema), updateRole);
 
@@ -260,6 +281,8 @@ router.patch('/users/:id/role', verifyToken, isAdmin, validate(updateRoleSchema)
  *         description: Ningún campo enviado para actualizar.
  *       404:
  *         description: Usuario no encontrado.
+ *       503:
+ *         description: Redis no disponible (BLACKLIST_FAIL_OPEN=false).
  */
 router.patch('/users/:id', verifyToken, isAdmin, validate(updateUserSchema), updateUser);
 
@@ -284,6 +307,8 @@ router.patch('/users/:id', verifyToken, isAdmin, validate(updateUserSchema), upd
  *         description: No puedes eliminar tu propio usuario.
  *       404:
  *         description: Usuario no encontrado.
+ *       503:
+ *         description: Redis no disponible (BLACKLIST_FAIL_OPEN=false).
  */
 router.delete('/users/:id', verifyToken, isAdmin, deleteUser);
 
@@ -316,7 +341,7 @@ router.post('/forgot-password', validate(forgotPasswordSchema), forgotPassword);
  * @swagger
  * /api/auth/reset-password:
  *   post:
- *     summary: Restablecer contraseña con token — HU05
+ *     summary: Restablecer contraseña con código OTP — HU05
  *     tags: [Auth]
  *     requestBody:
  *       required: true
@@ -324,20 +349,53 @@ router.post('/forgot-password', validate(forgotPasswordSchema), forgotPassword);
  *         application/json:
  *           schema:
  *             type: object
- *             required: [token, new_password]
+ *             required: [correo_usu, code, new_password]
  *             properties:
- *               token:
+ *               correo_usu:
  *                 type: string
+ *                 example: usuario@kiora.com
+ *               code:
+ *                 type: string
+ *                 pattern: '^\d{6}$'
+ *                 example: '123456'
  *               new_password:
  *                 type: string
- *                 minLength: 6
+ *                 minLength: 8
+ *                 description: "Mínimo 8 caracteres, una mayúscula, una minúscula, un número y un carácter especial (@$!%*?&_#^-.)"
  *     responses:
  *       200:
- *         description: Contraseña restablecida exitosamente.
+ *         description: Contraseña restablecida; session_version incrementada — todas las sesiones anteriores quedan inválidas.
  *       400:
- *         description: Token inválido, expirado o campos faltantes.
+ *         description: Código inválido, expirado o campos faltantes.
  */
 router.post('/reset-password', validate(resetPasswordSchema), resetPassword);
+
+/**
+ * @swagger
+ * /api/auth/verify-reset-code:
+ *   post:
+ *     summary: Verificar código de recuperación (OTP)
+ *     tags: [Auth]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [correo_usu, code]
+ *             properties:
+ *               correo_usu:
+ *                 type: string
+ *               code:
+ *                 type: string
+ *                 pattern: '^\\d{6}$'
+ *     responses:
+ *       200:
+ *         description: Código válido.
+ *       400:
+ *         description: Código inválido o expirado.
+ */
+router.post('/verify-reset-code', validate(verifyResetCodeSchema), verifyResetCode);
 
 /**
  * @swagger
@@ -360,17 +418,19 @@ router.post('/reset-password', validate(resetPasswordSchema), resetPassword);
  *                 description: Contraseña actual del usuario
  *               new_password:
  *                 type: string
- *                 minLength: 6
- *                 description: Nueva contraseña (debe ser diferente a la actual)
+ *                 minLength: 8
+ *                 description: "Nueva contraseña fuerte (mín. 8 caracteres, mayúscula, minúscula, número y carácter especial). Debe ser distinta a la actual."
  *     responses:
  *       200:
- *         description: Contraseña actualizada exitosamente.
+ *         description: Contraseña actualizada; session_version incrementada — debe iniciar sesión de nuevo (cookies de sesión limpiadas).
  *       400:
  *         description: Campos inválidos o nueva igual a la actual.
  *       401:
- *         description: Token no proporcionado o contraseña actual incorrecta.
+ *         description: Token no proporcionado, inválido o contraseña actual incorrecta.
  *       404:
  *         description: Usuario no encontrado.
+ *       503:
+ *         description: Redis no disponible (BLACKLIST_FAIL_OPEN=false).
  */
 router.patch('/me/password', verifyToken, validate(changePasswordSchema), changePassword);
 
