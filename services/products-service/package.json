@@ -1,13 +1,39 @@
 {
   "name": "products-service",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "Microservicio de catálogo de productos — Kiora",
+  "main": "src/index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "dev": "nodemon src/index.js",
+    "start": "node src/index.js",
+    "test": "jest --runInBand",
+    "lint": "eslint src --max-warnings 0",
+    "lint:fix": "eslint src --fix --max-warnings 0",
+    "migrate:up": "node-pg-migrate up --envPath .env.local --migrations-dir src/db/migrations",
+    "migrate:down": "node-pg-migrate down --envPath .env.local --migrations-dir src/db/migrations",
+    "migrate:up:docker": "node-pg-migrate up --envPath .env.docker --migrations-dir src/db/migrations",
+    "migrate:down:docker": "node-pg-migrate down --envPath .env.docker --migrations-dir src/db/migrations",
+    "migrate:create": "node-pg-migrate create --envPath .env.local --migrations-dir src/db/migrations"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "type": "commonjs"
+  "type": "commonjs",
+  "dependencies": {
+    "cors": "^2.8.6",
+    "dotenv": "^17.3.1",
+    "express": "^5.2.1",
+    "express-rate-limit": "^8.2.1",
+    "helmet": "^8.1.0",
+    "joi": "^18.0.2",
+    "node-pg-migrate": "^8.0.4",
+    "pg": "^8.19.0",
+    "winston": "^3.19.0"
+  },
+  "devDependencies": {
+    "eslint": "^8.57.0",
+    "jest": "^30.2.0",
+    "nodemon": "^3.1.14",
+    "supertest": "^7.2.2"
+  }
 }
