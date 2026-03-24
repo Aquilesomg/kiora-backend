@@ -57,6 +57,7 @@ app.get('/api/users/ready', async (req, res) => {
 
 // ── Documentación Swagger ──────────────────────────────────────────────────
 app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+app.get('/api/users/docs-json', (req, res) => res.json(swaggerSpec));
 
 // ── Rutas ──────────────────────────────────────────────────────────────────
 app.use('/api/auth', authRoutes);
