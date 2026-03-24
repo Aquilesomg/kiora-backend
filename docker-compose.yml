@@ -1,38 +1,85 @@
 services:
-  # 1. Base de Datos (PostgreSQL)
-  kiora-db:
+  # ─────────────────────────────────────────────
+  # BASES DE DATOS (una por microservicio)
+  # ─────────────────────────────────────────────
+
+  users-db:
     image: postgres:16-alpine
-    container_name: kiora_database
+    container_name: kiora_users_db
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${DB_USER:-postgres}
       POSTGRES_PASSWORD: ${DB_PASSWORD:-rootpassword}
+      POSTGRES_DB: kiora_users
     ports:
-      - "${DB_PORT:-5433}:5432"
+      - "5433:5432"
     volumes:
-      - kiora_db_data:/var/lib/postgresql/data
+      - users_db_data:/var/lib/postgresql/data
     healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U ${DB_USER:-postgres} -d ${DB_NAME:-postgres}" ]
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres} -d kiora_users"]
       interval: 10s
       timeout: 5s
       retries: 5
 
-  # 2. Interfaz Visual para la BD (pgAdmin)
-  kiora-pgadmin:
-    image: dpage/pgadmin4
-    container_name: kiora_admin_db
+  products-db:
+    image: postgres:16-alpine
+    container_name: kiora_products_db
     restart: unless-stopped
     environment:
-      PGADMIN_DEFAULT_EMAIL: admin@kiora.com
-      PGADMIN_DEFAULT_PASSWORD: admin
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-rootpassword}
+      POSTGRES_DB: kiora_products
     ports:
-      - "5050:80"
+      - "5434:5432"
     volumes:
-      - kiora_pgadmin_data:/var/lib/pgadmin
-    depends_on:
-      - kiora-db
+      - products_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres} -d kiora_products"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
-  # 3. Redis (blacklist de tokens JWT)
+  inventory-db:
+    image: postgres:16-alpine
+    container_name: kiora_inventory_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-rootpassword}
+      POSTGRES_DB: kiora_inventory
+    ports:
+      - "5435:5432"
+    volumes:
+      - inventory_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres} -d kiora_inventory"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  orders-db:
+    image: postgres:16-alpine
+    container_name: kiora_orders_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-rootpassword}
+      POSTGRES_DB: kiora_orders
+    ports:
+      - "5436:5432"
+    volumes:
+      - orders_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres} -d kiora_orders"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ─────────────────────────────────────────────
+  # INFRAESTRUCTURA COMPARTIDA
+  # ─────────────────────────────────────────────
+
+  # Redis — blacklist de tokens JWT + pub/sub de notificaciones
   kiora-redis:
     image: redis:7-alpine
     container_name: kiora_redis
@@ -40,14 +87,35 @@ services:
     ports:
       - "6379:6379"
     volumes:
-      - kiora_redis_data:/data
+      - redis_data:/data
     healthcheck:
-      test: [ "CMD", "redis-cli", "ping" ]
+      test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
 
-  # 4. Users Service
+  # pgAdmin — interfaz visual (se conecta a los 4 databases)
+  kiora-pgadmin:
+    image: dpage/pgadmin4
+    container_name: kiora_pgadmin
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@kiora.com
+      PGADMIN_DEFAULT_PASSWORD: admin
+    ports:
+      - "5050:80"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    depends_on:
+      - users-db
+      - products-db
+      - inventory-db
+      - orders-db
+
+  # ─────────────────────────────────────────────
+  # MICROSERVICIOS
+  # ─────────────────────────────────────────────
+
   users-service:
     build:
       context: ./services/users-service
@@ -59,17 +127,92 @@ services:
     env_file:
       - ./services/users-service/.env.docker
     environment:
-      DB_HOST: kiora-db # Nombre del servicio Docker, no localhost
-      DB_PORT: 5432 # Puerto interno del contenedor
-      REDIS_HOST: kiora-redis # Nombre del servicio Redis en Docker
+      DB_HOST: users-db
+      DB_PORT: 5432
+      DB_NAME: kiora_users
+      REDIS_HOST: kiora-redis
       REDIS_PORT: 6379
     depends_on:
-      kiora-db:
+      users-db:
         condition: service_healthy
       kiora-redis:
         condition: service_healthy
 
+  products-service:
+    build:
+      context: ./services/products-service
+      dockerfile: Dockerfile
+    container_name: kiora_products_service
+    restart: unless-stopped
+    ports:
+      - "3002:3002"
+    env_file:
+      - ./services/products-service/.env.docker
+    environment:
+      DB_HOST: products-db
+      DB_PORT: 5432
+      DB_NAME: kiora_products
+    depends_on:
+      products-db:
+        condition: service_healthy
+
+  inventory-service:
+    build:
+      context: ./services/inventory-service
+      dockerfile: Dockerfile
+    container_name: kiora_inventory_service
+    restart: unless-stopped
+    ports:
+      - "3003:3003"
+    env_file:
+      - ./services/inventory-service/.env.docker
+    environment:
+      DB_HOST: inventory-db
+      DB_PORT: 5432
+      DB_NAME: kiora_inventory
+    depends_on:
+      inventory-db:
+        condition: service_healthy
+
+  orders-service:
+    build:
+      context: ./services/orders-service
+      dockerfile: Dockerfile
+    container_name: kiora_orders_service
+    restart: unless-stopped
+    ports:
+      - "3004:3004"
+    env_file:
+      - ./services/orders-service/.env.docker
+    environment:
+      DB_HOST: orders-db
+      DB_PORT: 5432
+      DB_NAME: kiora_orders
+    depends_on:
+      orders-db:
+        condition: service_healthy
+
+  notifications-service:
+    build:
+      context: ./services/notifications-service
+      dockerfile: Dockerfile
+    container_name: kiora_notifications_service
+    restart: unless-stopped
+    ports:
+      - "3005:3005"
+    env_file:
+      - ./services/notifications-service/.env.docker
+    environment:
+      REDIS_HOST: kiora-redis
+      REDIS_PORT: 6379
+    depends_on:
+      kiora-redis:
+        condition: service_healthy
+
 volumes:
-  kiora_db_data:
-  kiora_pgadmin_data:
-  kiora_redis_data:
+  users_db_data:
+  products_db_data:
+  inventory_db_data:
+  orders_db_data:
+  redis_data:
+  pgadmin_data:
