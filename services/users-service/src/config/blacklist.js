@@ -1,4 +1,5 @@
 const Redis = require('ioredis');
+const logger = require('./logger');
 
 const BLACKLIST_UNAVAILABLE = 'BLACKLIST_UNAVAILABLE';
 
@@ -39,7 +40,7 @@ if (process.env.NODE_ENV === 'test') {
 
     client.on('error', (err) => {
         if (err.code !== 'ECONNREFUSED') {
-            console.error('[Redis blacklist] Error de conexión:', err.message);
+            logger.error('Redis blacklist: error de conexión', { error: err.message });
         }
     });
 }
@@ -93,7 +94,7 @@ const add = async (token) => {
         }
     } catch (err) {
         if (!err.message.includes("Stream isn't writeable") && !err.message.includes("max retries")) {
-            console.error('[Redis blacklist] Error al agregar token:', err.message);
+            logger.error('Redis blacklist: error al agregar token', { error: err.message });
         }
         if (!isBlacklistFailOpen()) {
             throw blacklistUnavailableError();
@@ -114,7 +115,7 @@ const has = async (token) => {
         return result === 1;
     } catch (err) {
         if (!err.message.includes("Stream isn't writeable") && !err.message.includes("max retries")) {
-            console.error('[Redis blacklist] Error al verificar token:', err.message);
+            logger.error('Redis blacklist: error al verificar token', { error: err.message });
         }
         if (!isBlacklistFailOpen()) {
             throw blacklistUnavailableError();

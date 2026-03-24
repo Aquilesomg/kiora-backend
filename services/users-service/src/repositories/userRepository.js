@@ -70,7 +70,7 @@ const create = (nom_usu, correo_usu, hashedPassword, rol_usu, tel_usu) =>
  * @param {{ nom_usu?: string, correo_usu?: string, tel_usu?: string }} fields
  */
 const update = (id_usu, fields) => {
-    const allowed = ['nom_usu', 'correo_usu', 'tel_usu', rol_usu];
+    const allowed = ['nom_usu', 'correo_usu', 'tel_usu', 'rol_usu'];
     const entries = Object.entries(fields).filter(([key]) => allowed.includes(key));
     const setClauses = entries.map(([key], i) => `${key} = $${i + 1}`).join(', ');
     return db.query(

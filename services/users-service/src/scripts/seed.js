@@ -1,90 +1,81 @@
 const { Pool } = require('pg');
 const bcrypt = require('bcrypt');
-require('dotenv').config({ path: '../.env' }); // To run from src/scripts
+require('../config/env');
 
-const pool = new Pool({
-    user: process.env.DB_USER || 'postgres',
-    host: process.env.DB_HOST || 'localhost',
-    database: process.env.DB_NAME || 'postgres',
-    password: process.env.DB_PASSWORD || 'rootpasword',
-    port: process.env.DB_PORT || 5432,
-});
+if (process.env.NODE_ENV === 'production') {
+    throw new Error('El script de seed no debe ejecutarse en producción.');
+}
+
+const pool = new Pool(
+    process.env.DATABASE_URL
+        ? { connectionString: process.env.DATABASE_URL }
+        : {
+            user: process.env.DB_USER || 'postgres',
+            host: process.env.DB_HOST || 'localhost',
+            database: process.env.DB_NAME || 'postgres',
+            password: process.env.DB_PASSWORD || '',
+            port: parseInt(process.env.DB_PORT || '5432', 10),
+        }
+);
+
+const seedUsers = [
+    {
+        nom_usu: process.env.SEED_ADMIN_NAME || 'Admin Kiora',
+        correo_usu: process.env.SEED_ADMIN_EMAIL || 'admin@kiora.local',
+        password: process.env.SEED_ADMIN_PASSWORD,
+        rol_usu: 'admin',
+        tel_usu: process.env.SEED_ADMIN_PHONE || null,
+    },
+    {
+        nom_usu: process.env.SEED_SUPPORT_NAME || 'Soporte Kiora',
+        correo_usu: process.env.SEED_SUPPORT_EMAIL || 'soporte@kiora.local',
+        password: process.env.SEED_SUPPORT_PASSWORD,
+        rol_usu: 'admin',
+        tel_usu: process.env.SEED_SUPPORT_PHONE || null,
+    },
+];
+
+const validateSeedPasswords = () => {
+    const missing = seedUsers.filter((u) => !u.password).map((u) => u.correo_usu);
+    if (missing.length > 0) {
+        throw new Error(
+            `Faltan contraseñas de seed. Define SEED_ADMIN_PASSWORD y SEED_SUPPORT_PASSWORD. Usuarios afectados: ${missing.join(', ')}`
+        );
+    }
+};
+
+async function upsertUser(user) {
+    const existing = await pool.query(
+        'SELECT id_usu FROM Cliente WHERE correo_usu = $1 AND activo = true',
+        [user.correo_usu]
+    );
+    if (existing.rows.length > 0) {
+        console.log(`Usuario ya existente, se omite: ${user.correo_usu}`);
+        return;
+    }
+
+    const hashedPassword = await bcrypt.hash(user.password, 10);
+    await pool.query(
+        `INSERT INTO Cliente (nom_usu, correo_usu, password_usu, rol_usu, tel_usu)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [user.nom_usu, user.correo_usu, hashedPassword, user.rol_usu, user.tel_usu]
+    );
+    console.log(`Usuario seed creado: ${user.correo_usu}`);
+}
 
 async function seed() {
     try {
-        console.log('Conectando a la base de datos...');
-
-        // Crear tabla Cliente si no existe (la base, por si acaso)
-        const createTableQuery = `
-            CREATE TABLE IF NOT EXISTS Cliente (
-                id_usu SERIAL PRIMARY KEY,
-                nom_usu VARCHAR(60),
-                correo_usu VARCHAR(100) UNIQUE,
-                rol_usu VARCHAR(30),
-                tel_usu VARCHAR(20)
-            );
-        `;
-
-        await pool.query(createTableQuery);
-
-        // Agregamos las columnas que falten usando ALTER TABLE
-        try {
-            await pool.query('ALTER TABLE Cliente ADD COLUMN password_usu VARCHAR(255);');
-            console.log('✅ Columna password_usu añadida.');
-        } catch (e) { /* Ya existe, ignorar */ }
-
-        try {
-            await pool.query('ALTER TABLE Cliente ADD COLUMN intentos_fallidos INT DEFAULT 0;');
-            console.log('✅ Columna intentos_fallidos añadida.');
-        } catch (e) { /* Ya existe, ignorar */ }
-
-        try {
-            await pool.query('ALTER TABLE Cliente ADD COLUMN bloqueado_hasta TIMESTAMP;');
-            console.log('✅ Columna bloqueado_hasta añadida.');
-        } catch (e) { /* Ya existe, ignorar */ }
-
-        console.log('✅ Tabla Cliente asegurada en la base de datos.');
-
-        // Verificar si el usuario ya existe
-        const checkUser = await pool.query('SELECT * FROM Cliente WHERE correo_usu = $1', ['Meneses@gmail.com']);
-
-        if (checkUser.rows.length === 0) {
-            // Crear usuario de prueba
-            const hashedPassword = await bcrypt.hash('admin123', 10);
-            await pool.query(
-                `INSERT INTO Cliente (nom_usu, correo_usu, password_usu, rol_usu, tel_usu)
-                 VALUES ($1, $2, $3, $4, $5)`,
-                ['Admin', 'Meneses@gmail.com', hashedPassword, 'admin', '1234567890']
-            );
-            console.log('   Usuario de prueba creado:');
-            console.log('   Email: Meneses@gmail.com');
-            console.log('   Password: admin123');
-        } else {
-            console.log('El usuario de prueba ya existe (Meneses1@gmail.com).');
+        validateSeedPasswords();
+        console.log('Iniciando seed de usuarios en entorno no productivo...');
+        for (const user of seedUsers) {
+            await upsertUser(user);
         }
-
-        // Crear usuario administrador Ruben
-        const checkRuben = await pool.query('SELECT * FROM Cliente WHERE correo_usu = $1', ['ruben@kiora.com']);
-
-        if (checkRuben.rows.length === 0) {
-            const hashedPasswordRuben = await bcrypt.hash('ruben123', 10);
-            await pool.query(
-                `INSERT INTO Cliente (nom_usu, correo_usu, password_usu, rol_usu, tel_usu)
-                 VALUES ($1, $2, $3, $4, $5)`,
-                ['Ruben', 'ruben@kiora.com', hashedPasswordRuben, 'admin', '0987654321']
-            );
-            console.log('   Usuario administrador creado:');
-            console.log('   Email: ruben@kiora.com');
-            console.log('   Password: ruben123');
-        } else {
-            console.log('El usuario administrador ya existe (ruben@kiora.com).');
-        }
-
+        console.log('Seed completado.');
     } catch (error) {
-        console.error('Error durante el seed:', error);
+        console.error('Error durante el seed:', error.message);
+        process.exitCode = 1;
     } finally {
         await pool.end();
-        console.log('Conexión cerrada.');
     }
 }
 

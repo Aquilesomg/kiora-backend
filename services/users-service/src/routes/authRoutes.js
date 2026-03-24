@@ -3,17 +3,42 @@ const rateLimit = require('express-rate-limit');
 const router = express.Router();
 const { verifyToken, isAdmin } = require('../middleware/authMiddleware');
 const validate = require('../middleware/validate');
-const { loginSchema, registerSchema, updateUserSchema, updateRoleSchema, forgotPasswordSchema, verifyResetCodeSchema, resetPasswordSchema, changePasswordSchema, changePasswordAdminSchema, updatePasswordAdminSchema } = require('../validators/authValidators');
+const { loginSchema, registerSchema, updateUserSchema, updateRoleSchema, forgotPasswordSchema, verifyResetCodeSchema, resetPasswordSchema, changePasswordSchema } = require('../validators/authValidators');
 const {
     register, login, refresh, logout, unlockUser, getUsers, getMe,
-    updateUser, deleteUser, updateRole, forgotPassword, verifyResetCode, resetPassword, changePassword, adminResetPassword
+    updateUser, deleteUser, updateRole, forgotPassword, verifyResetCode, resetPassword, changePassword
 } = require('../controllers/authController');
 
-const loginLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000, max: 10,
-    message: { error: 'Demasiados intentos de inicio de sesión. Intenta de nuevo en 15 minutos.' },
-    standardHeaders: true, legacyHeaders: false,
-});
+const isTestEnv = process.env.NODE_ENV === 'test';
+const createLimiter = (windowMs, max, message) =>
+    rateLimit({
+        windowMs,
+        max: isTestEnv ? 10000 : max,
+        message: { error: message },
+        standardHeaders: true,
+        legacyHeaders: false,
+    });
+
+const loginLimiter = createLimiter(
+    15 * 60 * 1000,
+    10,
+    'Demasiados intentos de inicio de sesión. Intenta de nuevo en 15 minutos.'
+);
+const forgotPasswordLimiter = createLimiter(
+    15 * 60 * 1000,
+    5,
+    'Demasiadas solicitudes de recuperación. Intenta de nuevo en 15 minutos.'
+);
+const verifyResetCodeLimiter = createLimiter(
+    10 * 60 * 1000,
+    10,
+    'Demasiados intentos de verificación de código. Intenta de nuevo en 10 minutos.'
+);
+const resetPasswordLimiter = createLimiter(
+    10 * 60 * 1000,
+    5,
+    'Demasiados intentos de restablecimiento. Intenta de nuevo en 10 minutos.'
+);
 
 /**
  * @swagger
@@ -334,8 +359,10 @@ router.delete('/users/:id', verifyToken, isAdmin, deleteUser);
  *         description: Siempre responde 200 (no revela si el correo existe).
  *       400:
  *         description: Correo inválido.
+ *       429:
+ *         description: Demasiadas solicitudes de recuperación en la ventana de tiempo.
  */
-router.post('/forgot-password', validate(forgotPasswordSchema), forgotPassword);
+router.post('/forgot-password', forgotPasswordLimiter, validate(forgotPasswordSchema), forgotPassword);
 
 /**
  * @swagger
@@ -367,8 +394,10 @@ router.post('/forgot-password', validate(forgotPasswordSchema), forgotPassword);
  *         description: Contraseña restablecida; session_version incrementada — todas las sesiones anteriores quedan inválidas.
  *       400:
  *         description: Código inválido, expirado o campos faltantes.
+ *       429:
+ *         description: Demasiados intentos de restablecimiento en la ventana de tiempo.
  */
-router.post('/reset-password', validate(resetPasswordSchema), resetPassword);
+router.post('/reset-password', resetPasswordLimiter, validate(resetPasswordSchema), resetPassword);
 
 /**
  * @swagger
@@ -394,8 +423,10 @@ router.post('/reset-password', validate(resetPasswordSchema), resetPassword);
  *         description: Código válido.
  *       400:
  *         description: Código inválido o expirado.
+ *       429:
+ *         description: Demasiados intentos de verificación de código en la ventana de tiempo.
  */
-router.post('/verify-reset-code', validate(verifyResetCodeSchema), verifyResetCode);
+router.post('/verify-reset-code', verifyResetCodeLimiter, validate(verifyResetCodeSchema), verifyResetCode);
 
 /**
  * @swagger
