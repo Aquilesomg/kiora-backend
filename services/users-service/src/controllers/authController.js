@@ -1,4 +1,5 @@
 const bcrypt = require('bcrypt');
+const crypto = require('crypto');
 const userRepository = require('../repositories/userRepository');
 const authService = require('../services/authService');
 const blacklist = require('../config/blacklist');
@@ -7,6 +8,12 @@ const emailService = require('../config/emailService');
 const logger = require('../config/logger');
 
 const MAX_INTENTOS = 5;
+
+/**
+ * authController
+ * Responsabilidad única: orquesta la lógica de negocio de autenticación y
+ * gestión de usuarios. Delega acceso a datos al repositorio y errores a next(error).
+ */
 
 // POST /api/auth/register
 const register = async (req, res, next) => {
@@ -339,7 +346,7 @@ const forgotPassword = async (req, res, next) => {
         }
 
         const usuario = result.rows[0];
-        const code = String(Math.floor(Math.random() * 1000000)).padStart(6, '0');
+        const code = String(crypto.randomInt(0, 1000000)).padStart(6, '0');
         const expira_en = new Date(Date.now() + emailService.RESET_CODE_EXPIRY_MINUTES * 60 * 1000);
 
         await userRepository.invalidateActiveResetTokens(usuario.id_usu);
@@ -427,6 +434,27 @@ const changePassword = async (req, res, next) => {
     }
 };
 
+// PATCH /api/auth/users/:id/password — Reset de password por Administrador
+const adminResetPassword = async (req, res, next) => {
+    const { id } = req.params;
+    const { password } = req.body;
+
+    try {
+        const hashedPassword = await bcrypt.hash(password, 10);
+        const outcome = await userRepository.updatePassword(id, hashedPassword);
+
+        if (!outcome.ok) {
+            return res.status(400).json({ error: 'Error al actualizar la contraseña. Intenta de nuevo.' });
+        }
+
+        logger.info('Admin cambió contraseña de usuario', { id_usu: outcome.id_usu, cambiado_por: req.usuario.id_usu });
+        res.status(200).json({ message: 'Contraseña actualizada exitosamente.' });
+    } catch (error) {
+        logger.error('Error en admin-reset-password', { error: error.message });
+        next(error);
+    }
+};
+
 module.exports = {
     register,
     login,
@@ -442,4 +470,5 @@ module.exports = {
     verifyResetCode,
     resetPassword,
     changePassword,
+    adminResetPassword,
 };

@@ -1,5 +1,6 @@
 const { Pool } = require('pg');
 require('./env');
+const logger = require('./logger');
 
 const pool = new Pool({
     user: process.env.DB_USER,
@@ -11,9 +12,10 @@ const pool = new Pool({
 
 pool.connect((err, client, release) => {
     if (err) {
-        return console.error('❌ Error conectando a PostgreSQL:', err.stack);
+        logger.error('Error conectando a PostgreSQL', { error: err.stack });
+        return;
     }
-    console.log('✅ Conectado exitosamente a la base de datos Kiora!');
+    logger.info('Conectado exitosamente a la base de datos Kiora');
     release();
 });
 

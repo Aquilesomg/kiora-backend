@@ -80,15 +80,15 @@ runDescribe('Migraciones SQL (integración Postgres)', () => {
         expect(exists).toBe(true);
         const { rows } = await pool.query('SELECT name FROM pgmigrations ORDER BY run_on');
         const names = rows.map((r) => r.name);
-        expect(names.length).toBeGreaterThanOrEqual(6);
+        expect(names.length).toBeGreaterThanOrEqual(8);
         expect(names.some((n) => n.includes('001'))).toBe(true);
         expect(names.some((n) => n.includes('006'))).toBe(true);
+        expect(names.some((n) => n.includes('007'))).toBe(true);
+        expect(names.some((n) => n.includes('008'))).toBe(true);
     });
 
-    test('esquema base: Cliente y tablas 001', async () => {
+    test('esquema base: Cliente presente', async () => {
         expect(await tableExists(pool, 'cliente')).toBe(true);
-        expect(await tableExists(pool, 'categoria')).toBe(true);
-        expect(await tableExists(pool, 'producto')).toBe(true);
     });
 
     test('002: columnas de bloqueo en cliente', async () => {
@@ -134,6 +134,13 @@ runDescribe('Migraciones SQL (integración Postgres)', () => {
                AND indexdef ILIKE '%(token)%'`
         );
         expect(rows.length).toBe(0);
+    });
+
+    test('008: tablas de otros dominios eliminadas de users-service', async () => {
+        expect(await tableExists(pool, 'categoria')).toBe(false);
+        expect(await tableExists(pool, 'producto')).toBe(false);
+        expect(await tableExists(pool, 'inventario')).toBe(false);
+        expect(await tableExists(pool, 'ventas')).toBe(false);
     });
 
     test('migrate up es idempotente (segunda ejecución sin error)', () => {

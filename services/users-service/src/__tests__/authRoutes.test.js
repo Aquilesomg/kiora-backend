@@ -145,7 +145,7 @@ describe('POST /api/auth/register', () => {
     beforeEach(() => jest.clearAllMocks());
 
     test('401 – sin token', async () => {
-        const res = await request(app).post('/api/auth/register').send({ nom_usu: 'Test', correo_usu: 'a@a.com', password: '123456' });
+        const res = await request(app).post('/api/auth/register').send({ nom_usu: 'Test', correo_usu: 'a@a.com', password: 'Aa1!aaaa' });
         expect(res.statusCode).toBe(401);
     });
 
@@ -166,7 +166,7 @@ describe('POST /api/auth/register', () => {
         const res = await request(app)
             .post('/api/auth/register')
             .set('Authorization', `Bearer ${adminToken}`)
-            .send({ nom_usu: 'Test', correo_usu: 'existe@test.com', password: '123456' });
+            .send({ nom_usu: 'Test', correo_usu: 'existe@test.com', password: 'Aa1!aaaa' });
 
         expect(res.statusCode).toBe(409);
         expect(res.body.error).toMatch(/ya está registrado/i);
@@ -181,7 +181,7 @@ describe('POST /api/auth/register', () => {
         const res = await request(app)
             .post('/api/auth/register')
             .set('Authorization', `Bearer ${adminToken}`)
-            .send({ nom_usu: 'Nuevo', correo_usu: 'nuevo@test.com', password: '123456' });
+            .send({ nom_usu: 'Nuevo', correo_usu: 'nuevo@test.com', password: 'Aa1!aaaa' });
 
         expect(res.statusCode).toBe(201);
         expect(res.body).toHaveProperty('id_usu', 10);
@@ -838,7 +838,7 @@ describe('POST /api/auth/reset-password', () => {
 
         const res = await request(app)
             .post('/api/auth/reset-password')
-            .send({ correo_usu: 'r@test.com', code: '123456', new_password: 'nueva123' });
+            .send({ correo_usu: 'r@test.com', code: '123456', new_password: 'Nueva1!23' });
 
         expect(res.statusCode).toBe(400);
         expect(res.body.error).toMatch(/invalido o ha expirado/i);
@@ -855,7 +855,7 @@ describe('POST /api/auth/reset-password', () => {
 
         const res = await request(app)
             .post('/api/auth/reset-password')
-            .send({ correo_usu: 'r@test.com', code: '123456', new_password: 'nueva123' });
+            .send({ correo_usu: 'r@test.com', code: '123456', new_password: 'Nueva1!23' });
 
         expect(res.statusCode).toBe(200);
         expect(res.body.message).toMatch(/restablecida exitosamente/i);
@@ -885,7 +885,7 @@ describe('PATCH /api/auth/me/password', () => {
     test('401 – sin token', async () => {
         const res = await request(app)
             .patch('/api/auth/me/password')
-            .send({ current_password: 'abc123', new_password: 'nueva123' });
+            .send({ current_password: 'abc123', new_password: 'Nueva1!23' });
 
         expect(res.statusCode).toBe(401);
     });
@@ -895,7 +895,7 @@ describe('PATCH /api/auth/me/password', () => {
         const res = await request(app)
             .patch('/api/auth/me/password')
             .set('Authorization', `Bearer ${clienteToken}`)
-            .send({ new_password: 'nueva123' });
+            .send({ new_password: 'Nueva1!23' });
 
         expect(res.statusCode).toBe(400);
     });
@@ -931,14 +931,14 @@ describe('PATCH /api/auth/me/password', () => {
         const res = await request(app)
             .patch('/api/auth/me/password')
             .set('Authorization', `Bearer ${clienteToken}`)
-            .send({ current_password: 'incorrecta', new_password: 'nueva123' });
+            .send({ current_password: 'incorrecta', new_password: 'Nueva1!23' });
 
         expect(res.statusCode).toBe(401);
         expect(res.body.error).toMatch(/contraseña actual es incorrecta/i);
     });
 
     test('200 – contraseña actualizada exitosamente', async () => {
-        const hash = await hashPassword('actual123');
+        const hash = await hashPassword('Actual1!23');
         mockSessionVersionOnce(0);
         db.query
             .mockResolvedValueOnce({ rows: [{ id_usu: 7, password_usu: hash, activo: true }] }) // findByIdWithPassword
@@ -947,14 +947,14 @@ describe('PATCH /api/auth/me/password', () => {
         const res = await request(app)
             .patch('/api/auth/me/password')
             .set('Authorization', `Bearer ${clienteToken}`)
-            .send({ current_password: 'actual123', new_password: 'nueva123' });
+            .send({ current_password: 'Actual1!23', new_password: 'Nueva1!23' });
 
         expect(res.statusCode).toBe(200);
         expect(res.body.message).toMatch(/actualizada exitosamente/i);
     });
 
     test('401 – tras cambiar contraseña el access token anterior queda revocado', async () => {
-        const hash = await hashPassword('actual123');
+        const hash = await hashPassword('Actual1!23');
         mockSessionVersionOnce(0);
         db.query
             .mockResolvedValueOnce({ rows: [{ id_usu: 7, password_usu: hash, activo: true }] })
@@ -963,7 +963,7 @@ describe('PATCH /api/auth/me/password', () => {
         const changeRes = await request(app)
             .patch('/api/auth/me/password')
             .set('Authorization', `Bearer ${clienteToken}`)
-            .send({ current_password: 'actual123', new_password: 'nueva123' });
+            .send({ current_password: 'Actual1!23', new_password: 'Nueva1!23' });
 
         expect(changeRes.statusCode).toBe(200);
 
