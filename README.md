@@ -25,10 +25,19 @@ Cada servicio es **autónomo**: tiene su propia base de datos, migraciones, Dock
 
 ## Levantar el entorno local
 
-```bash
-# Desde la raíz del proyecto
-docker compose up -d
-```
+Sigue estos pasos para configurar y ejecutar el proyecto:
+
+1. **Configuración inicial**: Crea los archivos de entorno para todos los servicios.
+   ```bash
+   chmod +x setup.sh
+   ./setup.sh
+   ```
+   *Nota: Revisa los archivos `.env.docker` generados en cada carpeta de servicio para asegurarte de que los secretos (JWT, SMTP) estén configurados si es necesario.*
+
+2. **Iniciar infraestructura**:
+   ```bash
+   docker compose up -d
+   ```
 
 | Servicio               | URL / Puerto        | Base de datos  |
 |------------------------|---------------------|----------------|
