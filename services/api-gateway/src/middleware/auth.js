@@ -1,27 +1,40 @@
 /**
  * auth.js
  * Middleware de Autenticación Centralizada para el API Gateway.
+ *
+ * ─ Fail-fast: el Gateway NO arranca si JWT_SECRET no está definida.
+ * ─ Rutas públicas inteligentes: usa prefijos en vez de lista estática.
+ * ─ Inyecta x-user-id y x-user-role para que los microservicios
+ *   downstream los lean sin re-verificar el JWT.
  */
 const jwt = require('jsonwebtoken');
 
-// Rutas que NO requieren validación de JWT (Públicas)
-const publicRoutes = [
+// ── Fail-fast: jamás arrancar sin secreto ─────────────────────────────────
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) {
+    console.error(
+        '❌ JWT_SECRET no está definida. El API Gateway NO puede arrancar de forma segura.\n' +
+        '   Configúrala en .env.docker o .env.local.'
+    );
+    process.exit(1);
+}
+
+// ── Prefijos / rutas que NO requieren JWT ─────────────────────────────────
+const PUBLIC_PREFIXES = [
     '/health',
     '/api/docs',
-    '/api/users/auth/login',
-    '/api/users/auth/register',
-    '/api/users/auth/refresh',
+    '/api/auth/',          // login, register, refresh, forgot-password, etc.
     '/api/users/health',
     '/api/users/ready',
-    '/api/users/docs-json'
+    '/api/users/docs-json',
 ];
 
-const authMiddleware = (req, res, next) => {
-    const path = req.path;
+const isPublicRoute = (path) =>
+    PUBLIC_PREFIXES.some((prefix) => path.startsWith(prefix));
 
-    // Verificar si la ruta es expresamente pública
-    const isPublic = publicRoutes.some(route => path.startsWith(route));
-    if (isPublic) {
+// ── Middleware ─────────────────────────────────────────────────────────────
+const authMiddleware = (req, res, next) => {
+    if (isPublicRoute(req.path)) {
         return next();
     }
 
@@ -38,27 +51,25 @@ const authMiddleware = (req, res, next) => {
     if (!token) {
         return res.status(401).json({
             error: 'Unauthorized',
-            message: 'No se proporcionó token de autenticación. Acceso denegado por el API Gateway.'
+            message: 'No se proporcionó token de autenticación. Acceso denegado por el API Gateway.',
         });
     }
 
     try {
-        // Verificar firma y expiración del token
-        const secret = process.env.JWT_SECRET || 'secret_de_desarrollo_cambiar_urgente';
-        const decoded = jwt.verify(token, secret);
+        const decoded = jwt.verify(token, JWT_SECRET);
 
-        // Inyectar claims en los headers para que los microservicios aguas abajo lo lean
-        req.headers['x-user-id'] = decoded.id;
-        if (decoded.role) {
-            req.headers['x-user-role'] = decoded.role;
+        // Inyectar claims reales del JWT del users-service
+        req.headers['x-user-id'] = String(decoded.id_usu);
+        if (decoded.rol_usu) {
+            req.headers['x-user-role'] = decoded.rol_usu;
         }
-        
+
         next();
     } catch (error) {
         return res.status(401).json({
             error: 'Unauthorized',
             message: 'Token de autenticación inválido o expirado.',
-            details: error.message
+            details: error.message,
         });
     }
 };

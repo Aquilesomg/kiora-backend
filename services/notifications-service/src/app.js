@@ -17,6 +17,25 @@ app.get('/health', (_req, res) => res.json({
     redis: { host: env.redis.host, port: env.redis.port },
 }));
 
+// ── Readiness (verifica conectividad con Redis) ───────────────────────────
+const Redis = require('ioredis');
+const readinessClient = new Redis({
+    host: env.redis.host,
+    port: env.redis.port,
+    password: env.redis.password,
+    lazyConnect: true,
+    maxRetriesPerRequest: 1,
+});
+app.get('/health/ready', async (_req, res) => {
+    try {
+        await readinessClient.ping();
+        res.status(200).json({ status: 'ready', checks: { redis: true } });
+    } catch (err) {
+        logger.warn('Readiness check falló', { error: err.message });
+        res.status(503).json({ status: 'not_ready', error: 'Redis no responde.' });
+    }
+});
+
 // ── Manejo global de errores ──────────────────────────────────────────────
 // eslint-disable-next-line no-unused-vars
 app.use((err, _req, res, _next) => {

@@ -16,6 +16,18 @@ app.use(express.json());
 // ── Health-check ──────────────────────────────────────────────────────────
 app.get('/health', (_req, res) => res.json({ status: 'ok', service: 'products-service' }));
 
+// ── Readiness (verifica conectividad con PostgreSQL) ──────────────────────
+const db = require('./config/db');
+app.get('/health/ready', async (_req, res) => {
+    try {
+        await db.query('SELECT 1');
+        res.status(200).json({ status: 'ready', checks: { postgres: true } });
+    } catch (err) {
+        logger.warn('Readiness check falló', { error: err.message });
+        res.status(503).json({ status: 'not_ready', error: 'PostgreSQL no responde.' });
+    }
+});
+
 // ── Rutas (se agregarán conforme se implemente el dominio) ─────────────────
 // app.use('/api/products', require('./routes/productRoutes'));
 // app.use('/api/categories', require('./routes/categoryRoutes'));

@@ -5,7 +5,11 @@ const authService = require('../services/authService');
 const blacklist = require('../config/blacklist');
 const { addToBlacklist } = require('../middleware/authMiddleware');
 const emailService = require('../config/emailService');
+const { client: redisClient } = require('../config/blacklist');
 const logger = require('../config/logger');
+
+const NOTIFICATIONS_CHANNEL = process.env.REDIS_NOTIFICATIONS_CHANNEL || 'kiora:notifications';
+const RESET_CODE_EXPIRY_MINUTES = emailService.RESET_CODE_EXPIRY_MINUTES;
 
 const MAX_INTENTOS = 5;
 
@@ -347,11 +351,26 @@ const forgotPassword = async (req, res, next) => {
 
         const usuario = result.rows[0];
         const code = String(crypto.randomInt(0, 1000000)).padStart(6, '0');
-        const expira_en = new Date(Date.now() + emailService.RESET_CODE_EXPIRY_MINUTES * 60 * 1000);
+        const expira_en = new Date(Date.now() + RESET_CODE_EXPIRY_MINUTES * 60 * 1000);
 
         await userRepository.invalidateActiveResetTokens(usuario.id_usu);
         await userRepository.createResetToken(usuario.id_usu, code, expira_en);
-        await emailService.sendPasswordResetCode(correo_usu, code);
+
+        // Publicar evento al notifications-service vía Redis pub/sub
+        const emailPayload = {
+            to: correo_usu,
+            subject: 'Código de recuperación - Kiora',
+            html: emailService.buildResetCodeHtml(code),
+            text: `Tu código de recuperación es: ${code}. Expira en ${RESET_CODE_EXPIRY_MINUTES} minutos.`,
+        };
+
+        try {
+            await redisClient.publish(NOTIFICATIONS_CHANNEL, JSON.stringify(emailPayload));
+        } catch (pubErr) {
+            // Fallback: envío directo si Redis pub/sub falla
+            logger.warn('Redis pub/sub no disponible, enviando email directamente', { error: pubErr.message });
+            await emailService.sendPasswordResetCode(correo_usu, code);
+        }
 
         logger.info('Email de recuperación enviado', { id_usu: usuario.id_usu });
         res.status(200).json({

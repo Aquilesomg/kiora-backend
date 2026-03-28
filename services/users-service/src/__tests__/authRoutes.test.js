@@ -10,6 +10,7 @@ jest.mock('../config/db', () => ({
 // ─── Mock de emailService para evitar llamadas reales a SMTP ───────────────
 jest.mock('../config/emailService', () => ({
     sendPasswordResetCode: jest.fn().mockResolvedValue(undefined),
+    buildResetCodeHtml: jest.fn().mockReturnValue('<p>mock html</p>'),
     RESET_CODE_EXPIRY_MINUTES: 15,
 }));
 
