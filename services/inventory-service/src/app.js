@@ -1,10 +1,12 @@
 'use strict';
 
-const express = require('express');
-const helmet  = require('helmet');
-const cors    = require('cors');
-const env     = require('./config/env');
-const logger  = require('./config/logger');
+const express     = require('express');
+const helmet      = require('helmet');
+const cors        = require('cors');
+const swaggerUi   = require('swagger-ui-express');
+const swaggerSpec = require('./config/swagger');
+const env         = require('./config/env');
+const logger      = require('./config/logger');
 
 const app = express();
 
@@ -26,8 +28,14 @@ app.get('/health/ready', async (_req, res) => {
     }
 });
 
-// app.use('/api/inventory', require('./routes/inventoryRoutes'));
-// app.use('/api/suppliers', require('./routes/supplierRoutes'));
+// ── Documentación Swagger ─────────────────────────────────────────────────
+app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
+    customSiteTitle: 'Kiora — Inventory Service',
+}));
+app.get('/api/docs.json', (_req, res) => res.json(swaggerSpec));
+
+// ── Rutas ─────────────────────────────────────────────────────────────────
+app.use('/api/inventory', require('./routes/inventoryRoutes'));
 
 // eslint-disable-next-line no-unused-vars
 app.use((err, _req, res, _next) => {

@@ -22,7 +22,8 @@ if (!JWT_SECRET) {
 // ── Prefijos / rutas que NO requieren JWT ─────────────────────────────────
 const PUBLIC_PREFIXES = [
     '/health',
-    '/api/docs',
+    '/api/docs',            // Swagger UI (HTML, JS, CSS)
+    '/api/docs.json',       // Specs JSON proxy de products/inventory/orders
     '/api/auth/',          // login, register, refresh, forgot-password, etc.
     '/api/users/health',
     '/api/users/ready',

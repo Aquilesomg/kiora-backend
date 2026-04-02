@@ -1,10 +1,12 @@
 'use strict';
 
-const express = require('express');
-const helmet  = require('helmet');
-const cors    = require('cors');
-const env     = require('./config/env');
-const logger  = require('./config/logger');
+const express    = require('express');
+const helmet     = require('helmet');
+const cors       = require('cors');
+const swaggerUi  = require('swagger-ui-express');
+const swaggerSpec = require('./config/swagger');
+const env        = require('./config/env');
+const logger     = require('./config/logger');
 
 const app = express();
 
@@ -28,9 +30,15 @@ app.get('/health/ready', async (_req, res) => {
     }
 });
 
-// ── Rutas (se agregarán conforme se implemente el dominio) ─────────────────
-// app.use('/api/products', require('./routes/productRoutes'));
-// app.use('/api/categories', require('./routes/categoryRoutes'));
+// ── Documentación Swagger ─────────────────────────────────────────────────
+app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
+    customSiteTitle: 'Kiora — Products Service',
+}));
+app.get('/api/docs.json', (_req, res) => res.json(swaggerSpec));
+
+// ── Rutas ─────────────────────────────────────────────────────────────────
+app.use('/api/products',    require('./routes/productRoutes'));
+app.use('/api/categories',  require('./routes/categoryRoutes'));
 
 // ── Manejo global de errores ──────────────────────────────────────────────
 // eslint-disable-next-line no-unused-vars

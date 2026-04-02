@@ -7,6 +7,7 @@ const morgan = require('morgan');
 const rateLimit = require('express-rate-limit');
 const cookieParser = require('cookie-parser');
 const swaggerUi = require('swagger-ui-express');
+const logger = require('./config/logger');
 
 const authMiddleware = require('./middleware/auth');
 const correlationId = require('./middleware/correlationId');
@@ -34,16 +35,39 @@ const limiter = rateLimit({
 });
 app.use('/api', limiter);
 
-// Swagger Unificado (API Docs)
+// Swagger Unificado (API Docs) — todos los microservicios
 const swaggerOptions = {
     explorer: true,
     swaggerOptions: {
         urls: [
-            { url: '/api/users/docs-json', name: 'Users Service' },
+            { url: '/api/users/docs-json',      name: 'Users Service' },
+            { url: '/api/docs.json?svc=products',   name: 'Products Service' },
+            { url: '/api/docs.json?svc=inventory',  name: 'Inventory Service' },
+            { url: '/api/docs.json?svc=orders',     name: 'Orders Service' },
         ],
     },
 };
 app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(null, swaggerOptions));
+
+// Proxy de docs JSON para que el Gateway los sirva con CORS correcto
+const SERVICES_URLS = {
+    products:  process.env.PRODUCTS_SERVICE_URL  || 'http://localhost:3002',
+    inventory: process.env.INVENTORY_SERVICE_URL || 'http://localhost:3003',
+    orders:    process.env.ORDERS_SERVICE_URL    || 'http://localhost:3004',
+};
+app.get('/api/docs.json', async (req, res) => {
+    const svc = req.query.svc;
+    const base = SERVICES_URLS[svc];
+    if (!base) return res.status(400).json({ error: 'svc param must be products, inventory or orders' });
+    try {
+        const r = await fetch(`${base}/api/docs.json`);
+        const json = await r.json();
+        res.json(json);
+    } catch (err) {
+        logger.warn(`No se pudo obtener docs de ${svc}`, { error: err.message });
+        res.status(503).json({ error: `${svc} service unavailable` });
+    }
+});
 
 // Autenticación Centralizada JWT
 app.use(authMiddleware);
@@ -59,7 +83,7 @@ const services = {
 
 // Función para unificar errores cuando un microservicio se cae
 const onProxyError = (serviceName) => (err, req, res) => {
-    console.error(`[Proxy Error] ${serviceName}:`, err.message);
+    logger.error(`[Proxy Error] ${serviceName}: ${err.message}`);
     res.status(503).json({
         error: 'Service Unavailable',
         service: serviceName,
@@ -124,11 +148,11 @@ app.get('/health/all', async (req, res) => {
 
 // ── Manejo de errores globales ────────────────────────────────────────────
 app.use((err, req, res, next) => {
-    console.error('API Gateway Error:', err);
+    logger.error('API Gateway Error', { message: err.message });
     res.status(500).json({ error: 'Internal Server Error', message: 'Gateway panic' });
 });
 
 app.listen(PORT, () => {
-    console.log(`API Gateway started on port ${PORT}`);
-    console.log(`Swagger UI available at http://localhost:${PORT}/api/docs`);
+    logger.info(`API Gateway iniciado en puerto ${PORT}`);
+    logger.info(`Swagger UI: http://localhost:${PORT}/api/docs`);
 });

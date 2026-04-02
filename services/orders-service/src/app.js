@@ -1,10 +1,12 @@
 'use strict';
 
-const express = require('express');
-const helmet  = require('helmet');
-const cors    = require('cors');
-const env     = require('./config/env');
-const logger  = require('./config/logger');
+const express     = require('express');
+const helmet      = require('helmet');
+const cors        = require('cors');
+const swaggerUi   = require('swagger-ui-express');
+const swaggerSpec = require('./config/swagger');
+const env         = require('./config/env');
+const logger      = require('./config/logger');
 
 const app = express();
 
@@ -26,8 +28,16 @@ app.get('/health/ready', async (_req, res) => {
     }
 });
 
-// app.use('/api/orders', require('./routes/orderRoutes'));
-// app.use('/api/invoices', require('./routes/invoiceRoutes'));
+// ── Documentación Swagger ─────────────────────────────────────────────────
+app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
+    customSiteTitle: 'Kiora — Orders Service',
+}));
+app.get('/api/docs.json', (_req, res) => res.json(swaggerSpec));
+
+// ── Rutas ─────────────────────────────────────────────────────────────────
+// IMPORTANTE: invoices debe ir ANTES de /:id para evitar conflicto de rutas
+app.use('/api/orders/invoices', require('./routes/invoiceRoutes'));
+app.use('/api/orders',          require('./routes/orderRoutes'));
 
 // eslint-disable-next-line no-unused-vars
 app.use((err, _req, res, _next) => {

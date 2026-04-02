@@ -28,6 +28,8 @@
     "joi": "^18.0.2",
     "node-pg-migrate": "^8.0.4",
     "pg": "^8.19.0",
+    "swagger-jsdoc": "^6.2.8",
+    "swagger-ui-express": "^5.0.1",
     "winston": "^3.19.0"
   },
   "devDependencies": {
