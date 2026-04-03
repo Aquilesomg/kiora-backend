@@ -2,6 +2,7 @@
 
 const orderRepository = require('../repositories/orderRepository');
 const logger = require('../config/logger');
+const env = require('../config/env');
 
 const VALID_STATES = ['pendiente', 'completada', 'cancelada'];
 
@@ -82,6 +83,45 @@ const updateOrderStatus = async (req, res, next) => {
             return res.status(404).json({ error: 'Venta no encontrada.' });
         }
         logger.info('Estado de venta actualizado', { id_vent: req.params.id, estado });
+
+        // ── Automatización: al completar la venta, disparar salidas de inventario ──
+        if (estado === 'completada') {
+            const order = await orderRepository.findByIdWithItems(req.params.id);
+            if (order && order.items && order.items.length > 0) {
+                for (const item of order.items) {
+                    try {
+                        const movRes = await fetch(
+                            `${env.inventoryServiceUrl}/api/inventory/movements`,
+                            {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                                    tipo_mov: 'salida',
+                                    cantidad: item.cantidad,
+                                    cod_prod: item.cod_prod,
+                                    fk_id_vent: Number(req.params.id),
+                                }),
+                            }
+                        );
+                        if (!movRes.ok) {
+                            const errBody = await movRes.text();
+                            logger.warn('No se pudo crear salida de inventario', {
+                                cod_prod: item.cod_prod, statusCode: movRes.status, body: errBody,
+                            });
+                        } else {
+                            logger.info('Salida de inventario creada automáticamente', {
+                                id_vent: req.params.id, cod_prod: item.cod_prod, cantidad: item.cantidad,
+                            });
+                        }
+                    } catch (syncErr) {
+                        logger.error('Error de red al crear salida de inventario', {
+                            cod_prod: item.cod_prod, error: syncErr.message,
+                        });
+                    }
+                }
+            }
+        }
+
         res.status(200).json(result.rows[0]);
     } catch (error) {
         logger.error('Error al actualizar estado', { error: error.message });

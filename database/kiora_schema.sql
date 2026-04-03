@@ -58,7 +58,9 @@ CREATE TABLE Producto (
     descrip_prod    TEXT,
     precio_unitario DECIMAL(10, 2) NOT NULL CHECK (precio_unitario >= 0),
     fechaven_prod   DATE,
-    fk_cod_cat      INT REFERENCES Categoria(cod_cat) ON DELETE SET NULL
+    fk_cod_cat      INT REFERENCES Categoria(cod_cat) ON DELETE SET NULL,
+    stock_actual    INT NOT NULL DEFAULT 0 CHECK (stock_actual >= 0),
+    stock_minimo    INT NOT NULL DEFAULT 0
 );
 
 
@@ -79,7 +81,9 @@ CREATE TABLE Inventario (
     tipo_mov  VARCHAR(50) NOT NULL,        -- 'entrada' | 'salida' | 'ajuste'
     fecha_mov DATE NOT NULL DEFAULT CURRENT_DATE,
     cantidad  INT NOT NULL CHECK (cantidad > 0),
-    cod_prod  INT NOT NULL                 -- → products-service.Producto (sin FK)
+    cod_prod  INT NOT NULL,                -- → products-service.Producto (sin FK)
+    fk_cod_prov INT REFERENCES Proveedor(cod_prov) ON DELETE SET NULL,
+    fk_id_vent  INT                        -- → orders-service.Ventas (idempotencia)
 );
 
 CREATE TABLE Suministra (

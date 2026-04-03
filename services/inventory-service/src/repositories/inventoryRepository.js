@@ -63,13 +63,13 @@ const countAllMovements = (cod_prod) =>
         : db.query('SELECT COUNT(*) FROM Inventario');
 
 /**
- * @param {{ tipo_mov, fecha_mov, cantidad, cod_prod }} fields
+ * @param {{ tipo_mov, fecha_mov, cantidad, cod_prod, fk_cod_prov, fk_id_vent }} fields
  */
-const createMovement = ({ tipo_mov, fecha_mov, cantidad, cod_prod }) =>
+const createMovement = ({ tipo_mov, fecha_mov, cantidad, cod_prod, fk_cod_prov, fk_id_vent }) =>
     db.query(
-        `INSERT INTO Inventario (tipo_mov, fecha_mov, cantidad, cod_prod)
-         VALUES ($1, $2, $3, $4) RETURNING *`,
-        [tipo_mov, fecha_mov || new Date(), cantidad, cod_prod]
+        `INSERT INTO Inventario (tipo_mov, fecha_mov, cantidad, cod_prod, fk_cod_prov, fk_id_vent)
+         VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+        [tipo_mov, fecha_mov || new Date(), cantidad, cod_prod, fk_cod_prov || null, fk_id_vent || null]
     );
 
 /* ── Suministra (proveedor ↔ producto + stock) ───────────────────────────── */

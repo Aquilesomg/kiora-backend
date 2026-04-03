@@ -8,6 +8,7 @@ const {
     createProduct,
     updateProduct,
     deleteProduct,
+    updateStock,
 } = require('../controllers/productController');
 
 /**
@@ -152,5 +153,65 @@ router.put('/:id', updateProduct);
  *               $ref: '#/components/schemas/Error'
  */
 router.delete('/:id', deleteProduct);
+
+/**
+ * @swagger
+ * /api/products/{id}/stock:
+ *   put:
+ *     summary: Actualizar stock de un producto (suma/resta atómica)
+ *     tags: [Productos]
+ *     description: |
+ *       Permite sumar o restar unidades del stock_actual de un producto.
+ *       Si el stock resultante es menor o igual al stock_minimo, la respuesta incluirá
+ *       `alerta_stock_critico: true`.
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         example: 1
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [cantidad]
+ *             properties:
+ *               cantidad:
+ *                 type: integer
+ *                 description: Unidades a sumar (positivo) o restar (negativo)
+ *                 example: 10
+ *           examples:
+ *             entrada:
+ *               summary: Sumar stock
+ *               value:
+ *                 cantidad: 50
+ *             salida:
+ *               summary: Restar stock
+ *               value:
+ *                 cantidad: -5
+ *     responses:
+ *       200:
+ *         description: Stock actualizado. Incluye alerta si stock <= stock_minimo.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Producto'
+ *       400:
+ *         description: cantidad es obligatorio o no es entero.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       404:
+ *         description: Producto no encontrado.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
+router.put('/:id/stock', updateStock);
 
 module.exports = router;

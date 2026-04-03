@@ -2,6 +2,7 @@
 
 const inventoryRepository = require('../repositories/inventoryRepository');
 const logger = require('../config/logger');
+const env = require('../config/env');
 
 /**
  * inventoryController
@@ -123,7 +124,7 @@ const getMovements = async (req, res, next) => {
 
 // POST /api/inventory/movements
 const createMovement = async (req, res, next) => {
-    const { tipo_mov, cantidad, cod_prod, fecha_mov } = req.body;
+    const { tipo_mov, cantidad, cod_prod, fecha_mov, fk_cod_prov, fk_id_vent } = req.body;
 
     if (!tipo_mov || cantidad === undefined || !cod_prod) {
         return res.status(400).json({ error: 'tipo_mov, cantidad y cod_prod son obligatorios.' });
@@ -136,10 +137,65 @@ const createMovement = async (req, res, next) => {
     }
 
     try {
-        const result = await inventoryRepository.createMovement({ tipo_mov, fecha_mov, cantidad, cod_prod });
+        // 1. Guardar el historial en la tabla Inventario
+        const result = await inventoryRepository.createMovement({
+            tipo_mov, fecha_mov, cantidad, cod_prod, fk_cod_prov, fk_id_vent,
+        });
         logger.info('Movimiento registrado', { id_mov: result.rows[0].id_mov, tipo_mov, cod_prod });
+
+        // 2. Sincronización reactiva con retry (exponential backoff)
+        const stockDelta = tipo_mov === 'entrada' ? Number(cantidad) : -Number(cantidad);
+        const MAX_RETRIES = 3;
+        let synced = false;
+
+        for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+            try {
+                const stockRes = await fetch(
+                    `${env.productsServiceUrl}/api/products/${cod_prod}/stock`,
+                    {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ cantidad: stockDelta }),
+                    }
+                );
+                if (stockRes.ok) {
+                    const stockData = await stockRes.json();
+                    logger.info('Stock sincronizado con products-service', {
+                        cod_prod, stock_actual: stockData.stock_actual, attempt,
+                    });
+                    synced = true;
+                    break;
+                }
+                const errBody = await stockRes.text();
+                logger.warn(`Intento ${attempt}/${MAX_RETRIES}: fallo al sincronizar stock`, {
+                    cod_prod, statusCode: stockRes.status, body: errBody,
+                });
+                // Si es 409 (stock insuficiente) no reintentar, es un error de negocio
+                if (stockRes.status === 409) break;
+            } catch (syncErr) {
+                logger.warn(`Intento ${attempt}/${MAX_RETRIES}: error de red al sincronizar stock`, {
+                    cod_prod, error: syncErr.message,
+                });
+            }
+            // Esperar con backoff exponencial antes del siguiente intento
+            if (attempt < MAX_RETRIES) {
+                await new Promise((resolve) => setTimeout(resolve, 500 * Math.pow(2, attempt - 1)));
+            }
+        }
+
+        if (!synced) {
+            logger.error('FALLO DEFINITIVO: No se pudo sincronizar stock tras todos los reintentos', {
+                cod_prod, id_mov: result.rows[0].id_mov,
+            });
+        }
+
         res.status(201).json(result.rows[0]);
     } catch (error) {
+        // Idempotencia: si fk_id_vent ya existe para ese cod_prod (unique index)
+        if (error.code === '23505' && error.constraint === 'uq_inventario_venta_producto') {
+            logger.warn('Movimiento duplicado ignorado (idempotencia)', { fk_id_vent, cod_prod });
+            return res.status(200).json({ message: 'Movimiento ya registrado para esta venta.', duplicado: true });
+        }
         logger.error('Error al registrar movimiento', { error: error.message });
         next(error);
     }

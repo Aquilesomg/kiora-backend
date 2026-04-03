@@ -187,6 +187,7 @@ services:
       DB_HOST: inventory-db
       DB_PORT: 5432
       DB_NAME: kiora_inventory
+      PRODUCTS_SERVICE_URL: http://products-service:3002
     depends_on:
       inventory-db:
         condition: service_healthy
@@ -205,6 +206,7 @@ services:
       DB_HOST: orders-db
       DB_PORT: 5432
       DB_NAME: kiora_orders
+      INVENTORY_SERVICE_URL: http://inventory-service:3003
     depends_on:
       orders-db:
         condition: service_healthy

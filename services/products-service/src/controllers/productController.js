@@ -53,7 +53,7 @@ const getProductById = async (req, res, next) => {
 
 // POST /api/products  (HU10)
 const createProduct = async (req, res, next) => {
-    const { nom_prod, descrip_prod, precio_unitario, fechaven_prod, fk_cod_cat } = req.body;
+    const { nom_prod, descrip_prod, precio_unitario, fechaven_prod, fk_cod_cat, stock_actual, stock_minimo } = req.body;
 
     if (!nom_prod || precio_unitario === undefined) {
         return res.status(400).json({ error: 'nom_prod y precio_unitario son obligatorios.' });
@@ -64,7 +64,7 @@ const createProduct = async (req, res, next) => {
 
     try {
         const result = await productRepository.create({
-            nom_prod, descrip_prod, precio_unitario, fechaven_prod, fk_cod_cat
+            nom_prod, descrip_prod, precio_unitario, fechaven_prod, fk_cod_cat, stock_actual, stock_minimo
         });
         logger.info('Producto creado', { cod_prod: result.rows[0].cod_prod });
         res.status(201).json(result.rows[0]);
@@ -117,4 +117,72 @@ const deleteProduct = async (req, res, next) => {
     }
 };
 
-module.exports = { getProducts, getProductById, createProduct, updateProduct, deleteProduct };
+// PUT /api/products/:id/stock — Actualizar stock del producto
+const updateStock = async (req, res, next) => {
+    const { id } = req.params;
+    const { cantidad } = req.body;
+
+    if (cantidad === undefined || cantidad === null) {
+        return res.status(400).json({ error: 'cantidad es obligatorio.' });
+    }
+    if (!Number.isInteger(Number(cantidad))) {
+        return res.status(400).json({ error: 'cantidad debe ser un número entero.' });
+    }
+
+    try {
+        // Pre-validación: verificar que el stock no quede negativo
+        if (Number(cantidad) < 0) {
+            const current = await productRepository.findById(id);
+            if (current.rows.length === 0) {
+                return res.status(404).json({ error: 'Producto no encontrado.' });
+            }
+            const proyectado = current.rows[0].stock_actual + Number(cantidad);
+            if (proyectado < 0) {
+                return res.status(409).json({
+                    error: 'Stock insuficiente.',
+                    stock_actual: current.rows[0].stock_actual,
+                    cantidad_solicitada: Number(cantidad),
+                    mensaje: `⚠️ No se puede restar ${Math.abs(Number(cantidad))} unidades. Stock actual: ${current.rows[0].stock_actual}.`,
+                });
+            }
+        }
+
+        const result = await productRepository.updateStock(id, Number(cantidad));
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'Producto no encontrado.' });
+        }
+
+        const producto = result.rows[0];
+        logger.info('Stock actualizado', { cod_prod: id, stock_actual: producto.stock_actual });
+
+        // Alerta de stock crítico
+        const alertaStockCritico = producto.stock_actual <= producto.stock_minimo;
+        if (alertaStockCritico) {
+            logger.warn('ALERTA: Stock crítico', {
+                cod_prod: id,
+                stock_actual: producto.stock_actual,
+                stock_minimo: producto.stock_minimo,
+            });
+        }
+
+        res.status(200).json({
+            ...producto,
+            alerta_stock_critico: alertaStockCritico,
+            mensaje: alertaStockCritico
+                ? `⚠️ Stock actual (${producto.stock_actual}) es menor o igual al mínimo configurado (${producto.stock_minimo}).`
+                : undefined,
+        });
+    } catch (error) {
+        // Constraint de BD: chk_stock_actual_no_negativo
+        if (error.code === '23514' && error.constraint === 'chk_stock_actual_no_negativo') {
+            return res.status(409).json({
+                error: 'Stock insuficiente.',
+                mensaje: 'La operación dejaría el stock en negativo.',
+            });
+        }
+        logger.error('Error al actualizar stock', { error: error.message });
+        next(error);
+    }
+};
+
+module.exports = { getProducts, getProductById, createProduct, updateProduct, deleteProduct, updateStock };
