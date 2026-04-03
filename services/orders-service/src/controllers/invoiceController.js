@@ -16,10 +16,13 @@ const getInvoices = async (req, res, next) => {
             invoiceRepository.countAll(),
         ]);
         res.status(200).json({
-            data:       rows.rows,
-            total:      parseInt(count.rows[0].count, 10),
-            page,
-            totalPages: Math.ceil(count.rows[0].count / limit),
+            data: rows.rows,
+            pagination: {
+                total: parseInt(count.rows[0].count, 10),
+                page,
+                limit,
+                totalPages: Math.ceil(count.rows[0].count / limit),
+            }
         });
     } catch (error) {
         logger.error('Error al listar facturas', { error: error.message });
