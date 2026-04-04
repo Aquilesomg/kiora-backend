@@ -1,5 +1,5 @@
-# ── Etapa base ─────────────────────────────────────────────────────────────
 FROM node:20-alpine AS base
+RUN apk update && apk add --no-cache gcompat
 WORKDIR /app
 
 COPY package*.json ./
@@ -14,7 +14,10 @@ RUN addgroup -S appgroup && adduser -S appuser -G appgroup
 COPY --from=base /app/node_modules ./node_modules
 COPY . .
 
-RUN chmod +x entrypoint.sh
+# Pre-crear carpeta de subidas y dar permisos al usuario de la app
+RUN mkdir -p /app/src/public/uploads && \
+    chown -R appuser:appgroup /app && \
+    chmod +x entrypoint.sh
 
 USER appuser
 

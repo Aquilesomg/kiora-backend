@@ -4,7 +4,6 @@ const productRepository = require('../repositories/productRepository');
 const logger = require('../config/logger');
 
 /**
- * productController
  * Orquesta la lógica de negocio del catálogo de productos.
  * HU10 — createProduct
  * HU11 — updateProduct
@@ -25,10 +24,13 @@ const getProducts = async (req, res, next) => {
             productRepository.countAll(),
         ]);
         res.status(200).json({
-            data:       rows.rows,
-            total:      parseInt(count.rows[0].count, 10),
-            page,
-            totalPages: Math.ceil(count.rows[0].count / limit),
+            data: rows.rows,
+            pagination: {
+                total: parseInt(count.rows[0].count, 10),
+                page,
+                limit,
+                totalPages: Math.ceil(count.rows[0].count / limit),
+            }
         });
     } catch (error) {
         logger.error('Error al obtener productos', { error: error.message });
@@ -55,6 +57,8 @@ const getProductById = async (req, res, next) => {
 const createProduct = async (req, res, next) => {
     const { nom_prod, descrip_prod, precio_unitario, fechaven_prod, fk_cod_cat, stock_actual, stock_minimo } = req.body;
 
+    console.log('[DEBUG] createProduct:', { body: req.body, hasFile: !!req.file });
+
     if (!nom_prod || precio_unitario === undefined) {
         return res.status(400).json({ error: 'nom_prod y precio_unitario son obligatorios.' });
     }
@@ -64,7 +68,13 @@ const createProduct = async (req, res, next) => {
 
     try {
         const result = await productRepository.create({
-            nom_prod, descrip_prod, precio_unitario, fechaven_prod, fk_cod_cat, stock_actual, stock_minimo
+            nom_prod, 
+            descrip_prod: descrip_prod || null, 
+            precio_unitario: Number(precio_unitario), 
+            fechaven_prod: fechaven_prod || null, 
+            fk_cod_cat: (fk_cod_cat && fk_cod_cat !== "" && fk_cod_cat !== 'null') ? Number(fk_cod_cat) : null, 
+            stock_actual: Number(stock_actual || 0), 
+            stock_minimo: Number(stock_minimo || 0)
         });
         logger.info('Producto creado', { cod_prod: result.rows[0].cod_prod });
         res.status(201).json(result.rows[0]);
@@ -80,14 +90,26 @@ const createProduct = async (req, res, next) => {
 // PUT /api/products/:id  (HU11)
 const updateProduct = async (req, res, next) => {
     const { id } = req.params;
+    const productId = Number(id);
+
+    console.log('[DEBUG] updateProduct:', { id, productId, bodyKeys: Object.keys(req.body), hasFile: !!req.file });
 
     if (req.body.precio_unitario !== undefined && Number(req.body.precio_unitario) < 0) {
         return res.status(400).json({ error: 'El precio_unitario no puede ser negativo.' });
     }
 
     try {
-        const result = await productRepository.update(id, req.body);
+        const fields = { ...req.body };
+        
+        // Conversión manual de tipos (FormData envía strings)
+        if (fields.precio_unitario !== undefined) fields.precio_unitario = Number(fields.precio_unitario);
+        if (fields.fk_cod_cat !== undefined) fields.fk_cod_cat = Number(fields.fk_cod_cat);
+        if (fields.stock_actual !== undefined) fields.stock_actual = Number(fields.stock_actual);
+        if (fields.stock_minimo !== undefined) fields.stock_minimo = Number(fields.stock_minimo);
+
+        const result = await productRepository.update(productId, fields);
         if (result.rows.length === 0) {
+            console.warn('[DEBUG] No rows affected for product:', productId);
             return res.status(404).json({ error: 'Producto no encontrado o ningún campo válido enviado.' });
         }
         logger.info('Producto actualizado', { cod_prod: id });
@@ -185,4 +207,15 @@ const updateStock = async (req, res, next) => {
     }
 };
 
-module.exports = { getProducts, getProductById, createProduct, updateProduct, deleteProduct, updateStock };
+// GET /api/products/low-stock
+const getLowStock = async (req, res, next) => {
+    try {
+        const result = await productRepository.findLowStock();
+        res.status(200).json({ data: result.rows });
+    } catch (error) {
+        logger.error('Error al obtener productos con bajo stock', { error: error.message });
+        next(error);
+    }
+};
+
+module.exports = { getProducts, getProductById, createProduct, updateProduct, deleteProduct, updateStock, getLowStock };

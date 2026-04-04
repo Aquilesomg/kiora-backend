@@ -24,10 +24,14 @@ const getSuppliers = async (req, res, next) => {
         ]);
         res.status(200).json({
             data: rows.rows,
-            total: parseInt(count.rows[0].count, 10),
-            page,
-            totalPages: Math.ceil(count.rows[0].count / limit),
+            pagination: {
+                total: parseInt(count.rows[0].count, 10),
+                page,
+                limit,
+                totalPages: Math.ceil(count.rows[0].count / limit),
+            }
         });
+
     } catch (error) {
         logger.error('Error al obtener proveedores', { error: error.message });
         next(error);
@@ -112,10 +116,14 @@ const getMovements = async (req, res, next) => {
         ]);
         res.status(200).json({
             data: rows.rows,
-            total: parseInt(count.rows[0].count, 10),
-            page,
-            totalPages: Math.ceil(count.rows[0].count / limit),
+            pagination: {
+                total: parseInt(count.rows[0].count, 10),
+                page,
+                limit,
+                totalPages: Math.ceil(count.rows[0].count / limit),
+            }
         });
+
     } catch (error) {
         logger.error('Error al obtener movimientos', { error: error.message });
         next(error);
@@ -215,10 +223,14 @@ const getSuministra = async (req, res, next) => {
         ]);
         res.status(200).json({
             data: rows.rows,
-            total: parseInt(count.rows[0].count, 10),
-            page,
-            totalPages: Math.ceil(count.rows[0].count / limit),
+            pagination: {
+                total: parseInt(count.rows[0].count, 10),
+                page,
+                limit,
+                totalPages: Math.ceil(count.rows[0].count / limit),
+            }
         });
+
     } catch (error) {
         logger.error('Error al obtener suministra', { error: error.message });
         next(error);

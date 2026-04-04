@@ -9,11 +9,15 @@ const env        = require('./config/env');
 const logger     = require('./config/logger');
 
 const app = express();
+const path = require('path');
 
-// ── Seguridad y parseo ────────────────────────────────────────────────────
-app.use(helmet());
+// ── Seguridad y parseo ───────────────────────────────────────────────────
+app.use(helmet({
+    crossOriginResourcePolicy: false, // Permitir cargar imágenes desde otros dominios (el gateway)
+}));
 app.use(cors({ origin: env.corsOrigin, credentials: true }));
 app.use(express.json());
+
 
 // ── Health-check ──────────────────────────────────────────────────────────
 app.get('/health', (_req, res) => res.json({ status: 'ok', service: 'products-service' }));

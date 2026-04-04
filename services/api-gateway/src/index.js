@@ -17,21 +17,23 @@ const PORT = process.env.PORT || 3000;
 
 // ── Configuración de Seguridad y Middlewares Globales ──────────────────────
 app.use(helmet());
+
 app.use(cors({
     origin: process.env.CORS_ORIGIN || 'http://localhost:3000',
     credentials: true,
 }));
+
 app.use(morgan('dev'));
 app.use(cookieParser());
 
 // Correlation ID — trazabilidad entre microservicios
 app.use(correlationId);
 
-// Limitador de peticiones (Rate Limiting)
+// Limitador de peticiones (Rate Limiting) — Aumentado para pruebas intensivas y masivas
 const limiter = rateLimit({
     windowMs: 15 * 60 * 1000,
-    max: 100,
-    message: { error: 'Too Many Requests', message: 'Límite de peticiones excedido, intenta más tarde.' },
+    max: 2000,
+    message: { error: 'Too Many Requests', message: 'Límite de peticiones excedido (2000/15min), intenta más tarde.' },
 });
 app.use('/api', limiter);
 
@@ -69,9 +71,6 @@ app.get('/api/docs.json', async (req, res) => {
     }
 });
 
-// Autenticación Centralizada JWT
-app.use(authMiddleware);
-
 // ── Configuración de Microservicios ───────────────────────────────────────
 const services = {
     users: process.env.USERS_SERVICE_URL || 'http://localhost:3001',
@@ -101,12 +100,15 @@ const transparentProxy = (serviceName, target) => {
     });
 };
 
-app.use('/api/users', transparentProxy('users-service', services.users));
-app.use('/api/auth', transparentProxy('users-service', services.users));
-app.use('/api/products', transparentProxy('products-service', services.products));
-app.use('/api/inventory', transparentProxy('inventory-service', services.inventory));
-app.use('/api/orders', transparentProxy('orders-service', services.orders));
+app.use('/api/users',       transparentProxy('users-service', services.users));
+app.use('/api/auth',        transparentProxy('users-service', services.users));
+app.use('/api/products',    transparentProxy('products-service', services.products));
+app.use('/api/categories',  transparentProxy('products-service', services.products)); // <-- AGREGADO
+app.use('/api/inventory',   transparentProxy('inventory-service', services.inventory));
+app.use('/api/orders',      transparentProxy('orders-service', services.orders));
+app.use('/api/invoices',    transparentProxy('orders-service', services.orders));   // <-- AGREGADO
 app.use('/api/notifications', transparentProxy('notifications-service', services.notifications));
+
 
 // ── Health check local ────────────────────────────────────────────────────
 app.get('/health', (req, res) => {

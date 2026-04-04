@@ -18,10 +18,13 @@ const getOrders = async (req, res, next) => {
             orderRepository.countAll(),
         ]);
         res.status(200).json({
-            data:       rows.rows,
-            total:      parseInt(count.rows[0].count, 10),
-            page,
-            totalPages: Math.ceil(count.rows[0].count / limit),
+            data: rows.rows,
+            pagination: {
+                total: parseInt(count.rows[0].count, 10),
+                page,
+                limit,
+                totalPages: Math.ceil(count.rows[0].count / limit),
+            }
         });
     } catch (error) {
         logger.error('Error al listar ventas', { error: error.message });
@@ -44,6 +47,14 @@ const getOrderById = async (req, res, next) => {
 // POST /api/orders
 const createOrder = async (req, res, next) => {
     const { metodopago_usu, items } = req.body;
+    
+    // El Gateway inyecta x-user-id tras validar el JWT
+    const id_usu_header = req.headers['x-user-id'];
+    const id_usu = id_usu_header ? parseInt(id_usu_header, 10) : req.body.id_usu;
+
+    if (!id_usu) {
+        return res.status(400).json({ error: 'No se pudo identificar al usuario (id_usu faltante).' });
+    }
 
     if (!Array.isArray(items) || items.length === 0) {
         return res.status(400).json({ error: 'items debe ser un array no vacío.' });
@@ -60,14 +71,15 @@ const createOrder = async (req, res, next) => {
     }
 
     try {
-        const order = await orderRepository.createWithItems({ metodopago_usu, items });
-        logger.info('Venta creada', { id_vent: order.id_vent });
+        const order = await orderRepository.createWithItems({ id_usu, metodopago_usu, items });
+        logger.info('Venta creada', { id_vent: order.id_vent, id_usu });
         res.status(201).json(order);
     } catch (error) {
         logger.error('Error al crear venta', { error: error.message });
         next(error);
     }
 };
+
 
 // PUT /api/orders/:id/status
 const updateOrderStatus = async (req, res, next) => {

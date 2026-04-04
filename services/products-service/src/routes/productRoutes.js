@@ -9,7 +9,20 @@ const {
     updateProduct,
     deleteProduct,
     updateStock,
+    getLowStock,
 } = require('../controllers/productController');
+
+/**
+ * @swagger
+ * /api/products/low-stock:
+ *   get:
+ *     summary: Listar productos con bajo stock actual (global)
+ *     tags: [Productos]
+ *     responses:
+ *       200:
+ *         description: Array de productos que cumplen stock_actual <= stock_minimo.
+ */
+router.get('/low-stock', getLowStock);
 
 /**
  * @swagger
