@@ -4,6 +4,14 @@ const inventoryRepository = require('../repositories/inventoryRepository');
 const logger = require('../config/logger');
 const env = require('../config/env');
 
+/** Headers salientes hacia otros microservicios (trazabilidad). */
+const outgoingHeaders = (req) => {
+    const h = { 'Content-Type': 'application/json' };
+    const cid = req.headers['x-correlation-id'];
+    if (cid) h['x-correlation-id'] = cid;
+    return h;
+};
+
 /**
  * inventoryController
  * Orquesta la lógica de negocio del inventario.
@@ -162,7 +170,7 @@ const createMovement = async (req, res, next) => {
                     `${env.productsServiceUrl}/api/products/${cod_prod}/stock`,
                     {
                         method: 'PUT',
-                        headers: { 'Content-Type': 'application/json' },
+                        headers: outgoingHeaders(req),
                         body: JSON.stringify({ cantidad: stockDelta }),
                     }
                 );

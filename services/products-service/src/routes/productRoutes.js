@@ -2,6 +2,7 @@
 
 const express = require('express');
 const router = express.Router();
+const upload = require('../middlewares/uploadMiddleware');
 const {
     getProducts,
     getProductById,
@@ -97,7 +98,7 @@ router.get('/:id', getProductById);
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
-router.post('/', createProduct);
+router.post('/', upload.single('imagen'), createProduct);
 
 /**
  * @swagger
@@ -132,7 +133,7 @@ router.post('/', createProduct);
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
-router.put('/:id', updateProduct);
+router.put('/:id', upload.single('imagen'), updateProduct);
 
 /**
  * @swagger

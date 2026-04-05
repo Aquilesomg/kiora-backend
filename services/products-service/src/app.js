@@ -9,7 +9,6 @@ const env        = require('./config/env');
 const logger     = require('./config/logger');
 
 const app = express();
-const path = require('path');
 
 // ── Seguridad y parseo ───────────────────────────────────────────────────
 app.use(helmet({

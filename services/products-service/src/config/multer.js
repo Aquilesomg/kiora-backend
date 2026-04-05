@@ -1,7 +1,6 @@
 'use strict';
 
 const multer = require('multer');
-const path = require('path');
 
 // Usamos MemoryStorage por ahora porque procesaremos la imagen con Sharp antes de guardarla a disco
 const storage = multer.memoryStorage();
