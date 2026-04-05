@@ -56,8 +56,7 @@ const getProductById = async (req, res, next) => {
 // POST /api/products  (HU10)
 const createProduct = async (req, res, next) => {
     const { nom_prod, descrip_prod, precio_unitario, fechaven_prod, fk_cod_cat, stock_actual, stock_minimo } = req.body;
-
-    console.log('[DEBUG] createProduct:', { body: req.body, hasFile: !!req.file });
+    const url_imagen = req.file ? req.file.path : null;
 
     if (!nom_prod || precio_unitario === undefined) {
         return res.status(400).json({ error: 'nom_prod y precio_unitario son obligatorios.' });
@@ -74,7 +73,8 @@ const createProduct = async (req, res, next) => {
             fechaven_prod: fechaven_prod || null, 
             fk_cod_cat: (fk_cod_cat && fk_cod_cat !== "" && fk_cod_cat !== 'null') ? Number(fk_cod_cat) : null, 
             stock_actual: Number(stock_actual || 0), 
-            stock_minimo: Number(stock_minimo || 0)
+            stock_minimo: Number(stock_minimo || 0),
+            url_imagen
         });
         logger.info('Producto creado', { cod_prod: result.rows[0].cod_prod });
         res.status(201).json(result.rows[0]);
@@ -101,6 +101,11 @@ const updateProduct = async (req, res, next) => {
     try {
         const fields = { ...req.body };
         
+        // Asignar URL de la imagen de Cloudinary si se subió una
+        if (req.file && req.file.path) {
+            fields.url_imagen = req.file.path;
+        }
+
         // Conversión manual de tipos (FormData envía strings)
         if (fields.precio_unitario !== undefined) fields.precio_unitario = Number(fields.precio_unitario);
         if (fields.fk_cod_cat !== undefined) fields.fk_cod_cat = Number(fields.fk_cod_cat);
