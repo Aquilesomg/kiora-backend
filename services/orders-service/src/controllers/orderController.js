@@ -4,6 +4,13 @@ const orderRepository = require('../repositories/orderRepository');
 const logger = require('../config/logger');
 const env = require('../config/env');
 
+const outgoingHeaders = (req) => {
+    const h = { 'Content-Type': 'application/json' };
+    const cid = req.headers['x-correlation-id'];
+    if (cid) h['x-correlation-id'] = cid;
+    return h;
+};
+
 const VALID_STATES = ['pendiente', 'completada', 'cancelada'];
 
 // GET /api/orders  — lista paginada
@@ -84,55 +91,99 @@ const createOrder = async (req, res, next) => {
 // PUT /api/orders/:id/status
 const updateOrderStatus = async (req, res, next) => {
     const { estado } = req.body;
+    const orderId = req.params.id;
+
     if (!VALID_STATES.includes(estado)) {
         return res.status(400).json({
             error: `estado debe ser uno de: ${VALID_STATES.join(', ')}.`,
         });
     }
+
     try {
-        const result = await orderRepository.updateStatus(req.params.id, estado);
-        if (result.rows.length === 0) {
+        // 1. Obtenemos los ítems ANTES de intentar marcar la venta como completada
+        const order = await orderRepository.findByIdWithItems(orderId);
+        if (!order) {
             return res.status(404).json({ error: 'Venta no encontrada.' });
         }
-        logger.info('Estado de venta actualizado', { id_vent: req.params.id, estado });
 
-        // ── Automatización: al completar la venta, disparar salidas de inventario ──
-        if (estado === 'completada') {
-            const order = await orderRepository.findByIdWithItems(req.params.id);
-            if (order && order.items && order.items.length > 0) {
-                for (const item of order.items) {
+        // 2. Si se va a completar, interactuamos con el Inventario PRIMERO
+        if (estado === 'completada' && order.items && order.items.length > 0) {
+            const exitosos = [];
+            let inventoryFailed = false;
+            let errorDetails = null;
+
+            for (const item of order.items) {
+                try {
+                    const movRes = await fetch(
+                        `${env.inventoryServiceUrl}/api/inventory/movements`,
+                        {
+                            method: 'POST',
+                            headers: outgoingHeaders(req),
+                            body: JSON.stringify({
+                                tipo_mov: 'salida',   // Solicitamos reducción
+                                cantidad: item.cantidad,
+                                cod_prod: item.cod_prod,
+                                fk_id_vent: Number(orderId),
+                            }),
+                        }
+                    );
+                    if (!movRes.ok) {
+                        inventoryFailed = true;
+                        errorDetails = await movRes.text();
+                        logger.warn('Fallo stock para un item', { cod_prod: item.cod_prod, status: movRes.status, body: errorDetails });
+                        break; // Frenamos y desencadenamos rollback SAGA
+                    } else {
+                        // Guardamos en la memoria local los que sí pasaron (Para posible compensación)
+                        exitosos.push(item);
+                        logger.info('Stock restado temporalmente', { cod_prod: item.cod_prod });
+                    }
+                } catch (netErr) {
+                    inventoryFailed = true;
+                    errorDetails = netErr.message;
+                    logger.error('Error de red contactando inventario', { cod_prod: item.cod_prod, err: netErr.message });
+                    break;
+                }
+            }
+
+            // ================= PATRÓN SAGA (COMPENSACIÓN) =================
+            if (inventoryFailed) {
+                logger.warn('⚠️ SAGA: Iniciando rollback de inventario por fallo en la venta', { itemsRevertir: exitosos.length });
+                for (const reg of exitosos) {
                     try {
-                        const movRes = await fetch(
+                        const compReq = await fetch(
                             `${env.inventoryServiceUrl}/api/inventory/movements`,
                             {
                                 method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
+                                headers: outgoingHeaders(req),
                                 body: JSON.stringify({
-                                    tipo_mov: 'salida',
-                                    cantidad: item.cantidad,
-                                    cod_prod: item.cod_prod,
-                                    fk_id_vent: Number(req.params.id),
+                                    tipo_mov: 'entrada', // Operación inversa a 'salida'
+                                    cantidad: reg.cantidad,
+                                    cod_prod: reg.cod_prod,
+                                    fk_id_vent: Number(orderId),
+                                    observaciones: 'COMPENSACION SAGA: FALLO DE ORDEN'
                                 }),
                             }
                         );
-                        if (!movRes.ok) {
-                            const errBody = await movRes.text();
-                            logger.warn('No se pudo crear salida de inventario', {
-                                cod_prod: item.cod_prod, statusCode: movRes.status, body: errBody,
-                            });
+                        if (!compReq.ok) {
+                            logger.error('CRÍTICO: Falló la compensación SAGA', { cod_prod: reg.cod_prod });
                         } else {
-                            logger.info('Salida de inventario creada automáticamente', {
-                                id_vent: req.params.id, cod_prod: item.cod_prod, cantidad: item.cantidad,
-                            });
+                            logger.info('✅ SAGA: Producto devuelto al almacén digital', { cod_prod: reg.cod_prod });
                         }
-                    } catch (syncErr) {
-                        logger.error('Error de red al crear salida de inventario', {
-                            cod_prod: item.cod_prod, error: syncErr.message,
-                        });
+                    } catch (e) {
+                         logger.error('CRÍTICO: Caída de red durante compensación SAGA', { cod_prod: reg.cod_prod, err: e.message });
                     }
                 }
+                // Abortar la actualización de la base local y retornar 500 al cliente
+                return res.status(500).json({ 
+                    error: 'Error: Inventario insuficiente o servicio caído. Orden revertida automáticamente. No hubo cargos.', 
+                    detalle: errorDetails 
+                });
             }
         }
+
+        // 3. Si el inventario fue un éxito perfecto o no era 'completada', aplicamos a Base de Datos local.
+        const result = await orderRepository.updateStatus(orderId, estado);
+        logger.info('Estado de venta consolidado en base de datos local', { id_vent: orderId, estado });
 
         res.status(200).json(result.rows[0]);
     } catch (error) {

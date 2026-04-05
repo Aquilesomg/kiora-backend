@@ -81,8 +81,12 @@ Los demás servicios (ej. inventario, ventas) almacenan el ID del producto como 
 ```bash
 npm run dev              # Servidor en modo desarrollo
 npm start                # Servidor en producción
-npm test                 # Correr todos los tests
+npm test                 # Tests (smoke HTTP con DB mockeada)
+npm run test:migrations  # Integración: Postgres real; requiere RUN_MIGRATION_TESTS=true (usa dotenv .env.local)
 npm run lint             # ESLint
+npm run audit:ci         # CI: npm audit --audit-level=critical (Cloudinary v1 reporta high hasta upgrade mayor)
 npm run migrate:up       # Aplicar migraciones (.env.local)
 npm run migrate:down     # Revertir la última migración (.env.local)
 ```
+
+Contratos con otros servicios: [../../docs/INTER_SERVICE_CONTRACTS.md](../../docs/INTER_SERVICE_CONTRACTS.md).

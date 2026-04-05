@@ -52,6 +52,8 @@ Este microservicio se comunica con:
 - `users-service` (URL en variable `USERS_SERVICE_URL`) para obtener datos del cliente.
 - `inventory-service` (URL en variable `INVENTORY_SERVICE_URL`) para descontar stock al consolidar una venta.
 
+Contratos y comportamiento ante fallos: [../../docs/INTER_SERVICE_CONTRACTS.md](../../docs/INTER_SERVICE_CONTRACTS.md).
+
 ### 3. Correr las migraciones
 
 Asegúrate de tener la BD creada (`CREATE DATABASE kiora_orders;` si no usas Docker Compose).

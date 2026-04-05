@@ -45,6 +45,8 @@ cp .env.example .env.docker
 
 Asegúrate de configurar `PRODUCTS_SERVICE_URL` correctamente para que este microservicio pueda comunicarse con el servicio de productos y validar la existencia de los mismos antes de realizar movimientos de stock.
 
+Detalle de llamadas HTTP y trazabilidad: [../../docs/INTER_SERVICE_CONTRACTS.md](../../docs/INTER_SERVICE_CONTRACTS.md).
+
 ### 3. Crear la base de datos
 
 Si usas una BD Postgres local en lugar de la que levanta Docker Compose:

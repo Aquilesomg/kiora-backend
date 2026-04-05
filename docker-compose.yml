@@ -1,3 +1,6 @@
+# Desarrollo local únicamente: valores por defecto (p. ej. POSTGRES_PASSWORD) no son válidos para producción.
+# En entornos reales usa secretos gestionados y variables de entorno; no copies credenciales reales a este archivo.
+
 services:
   # ─────────────────────────────────────────────
   # BASES DE DATOS (una por microservicio)
