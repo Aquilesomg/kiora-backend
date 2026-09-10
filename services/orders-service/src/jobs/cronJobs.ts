@@ -1,6 +1,6 @@
 import cron from 'node-cron';
 import axios from 'axios';
-import logger from '../config/logger';
+import { logger } from '@kiora/shared';
 import { forceCloseSessionByCronIfNeeded } from '../controllers/sessionController';
 
 export const startCronJobs = () => {

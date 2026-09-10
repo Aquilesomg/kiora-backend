@@ -4,7 +4,7 @@ import db from '../config/db.js';
 
 const saveAlert = async ({ tipo, mensaje, metadata }) => {
     return db.query(
-        `INSERT INTO Alerta (tipo, mensaje, metadata)
+        `INSERT INTO alerta (tipo, mensaje, metadata)
          VALUES ($1, $2, $3)
          RETURNING *`,
         [tipo, mensaje, metadata ? JSON.stringify(metadata) : null]
@@ -12,7 +12,7 @@ const saveAlert = async ({ tipo, mensaje, metadata }) => {
 };
 
 const getAlerts = async ({ limit = 20, offset = 0, leida = null }) => {
-    let query = 'SELECT * FROM Alerta';
+    let query = 'SELECT * FROM alerta';
     const params = [];
     
     if (leida !== null) {
@@ -28,7 +28,7 @@ const getAlerts = async ({ limit = 20, offset = 0, leida = null }) => {
 
 const markAsRead = async (id) => {
     return db.query(
-        `UPDATE Alerta SET leida = TRUE WHERE id = $1 RETURNING *`,
+        `UPDATE alerta SET leida = TRUE WHERE id = $1 RETURNING *`,
         [id]
     );
 };

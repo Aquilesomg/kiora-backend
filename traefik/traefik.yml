@@ -1,0 +1,70 @@
+# ══════════════════════════════════════════════════════════
+#  Traefik v2 — Configuración Estática
+#  Kiora Backend Load Balancer
+# ══════════════════════════════════════════════════════════
+
+# ── Logs ──────────────────────────────────────────────────
+log:
+  level: INFO   # DEBUG en desarrollo, INFO/WARN en producción
+
+accessLog:
+  format: json
+
+# ── API y Dashboard (solo exponer en dev, proteger en prod) ─
+api:
+  dashboard: true   # → http://localhost:8080
+  insecure: true    # ⚠️  En producción: false + BasicAuth middleware
+
+# ── Entry Points ──────────────────────────────────────────
+entryPoints:
+  web:
+    address: ":80"
+    # En producción: redirigir todo HTTP → HTTPS
+    http:
+      redirections:
+        entryPoint:
+          to: websecure
+          scheme: https
+          permanent: true
+
+  # ─ PRODUCCIÓN: Descomentar cuando tengas servidor y dominio apuntando ─────
+  websecure:
+    address: ":443"
+    http:
+      tls:
+        certResolver: letsencrypt
+
+# ── Providers ─────────────────────────────────────────────
+providers:
+  # Docker: descubrimiento automático via labels en docker-compose
+  docker:
+    endpoint: "unix:///var/run/docker.sock"
+    network: traefik-public        # Red por la que Traefik habla con los backends
+    exposedByDefault: false        # Solo exponer servicios con label traefik.enable=true
+    watch: true                    # Detectar nuevas réplicas al hacer --scale
+
+  # Archivo: middlewares y configuración dinámica adicional
+  file:
+    directory: "/etc/traefik/dynamic"
+    watch: true
+
+# ── Métricas Prometheus ──────────────────────────────────
+metrics:
+  prometheus:
+    buckets:
+      - 0.1
+      - 0.3
+      - 1.2
+      - 5.0
+    addEntryPointsLabels: true
+    addServicesLabels: true
+    entryPoint: traefik          # Exponer /metrics en el puerto del dashboard
+
+# ── PRODUCCIÓN: Let's Encrypt (descomenta cuando tengas servidor) ───────────
+# certificatesResolvers:
+#   letsencrypt:
+#     acme:
+#       email: tu-email@dominio.com       # ← Reemplazar
+#       storage: /letsencrypt/acme.json
+#       httpChallenge:
+#         entryPoint: web

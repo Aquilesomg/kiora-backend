@@ -1,7 +1,7 @@
 'use strict';
 
 import { Pool } from 'pg';
-import logger from './logger';
+import { logger } from '@kiora/shared';
 
 const pool = new Pool({
     user: process.env.DB_USER,

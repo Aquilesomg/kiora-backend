@@ -3,11 +3,11 @@
 -- Agrega columnas de seguridad a la tabla Cliente
 
 -- Up Migration
-ALTER TABLE Cliente
+ALTER TABLE cliente
     ADD COLUMN IF NOT EXISTS intentos_fallidos INT NOT NULL DEFAULT 0,
     ADD COLUMN IF NOT EXISTS bloqueado_hasta TIMESTAMP NULL;
 
 -- Down Migration
--- ALTER TABLE Cliente
---     DROP COLUMN IF EXISTS intentos_fallidos,
---     DROP COLUMN IF EXISTS bloqueado_hasta;
+ALTER TABLE cliente
+DROP COLUMN IF EXISTS intentos_fallidos,
+DROP COLUMN IF EXISTS bloqueado_hasta;

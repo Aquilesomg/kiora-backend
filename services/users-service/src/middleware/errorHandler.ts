@@ -1,4 +1,4 @@
-import logger from '../config/logger';
+import { logger } from '@kiora/shared';
 import { Request, Response, NextFunction } from 'express';
 
 const errorHandler = (err: any, req: Request, res: Response, _next: NextFunction) => {

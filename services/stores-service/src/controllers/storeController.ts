@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import repo from '../repositories/storeRepository';
-import logger from '../config/logger';
+import { logger } from '@kiora/shared';
 
 // ── Tiendas ────────────────────────────────────────────────────────────────
 

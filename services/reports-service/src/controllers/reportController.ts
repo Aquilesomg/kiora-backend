@@ -2,18 +2,17 @@
 import logger from '../config/logger.js';
 import { generateInvoicePDF  } from '../utils/pdfBuilder.js';
 
+import { getOrderById } from '../repositories/reportRepository.js';
+
 const generateReceiptPdf = async (req, res) => {
     const { orderId } = req.params;
     try {
-        // Compose Data from inner microservice network
-        const orderRes = await fetch(`${process.env.ORDERS_SERVICE_URL}/api/orders/${orderId}`);
+        // Compose Data from local CQRS replica
+        const orderData = await getOrderById(orderId);
         
-        if (!orderRes.ok) {
-            if (orderRes.status === 404) return res.status(404).json({ error: 'Orden no encontrada' });
-            return res.status(orderRes.status).json({ error: 'Fallo al obtener datos de la orden en services' });
+        if (!orderData) {
+            return res.status(404).json({ error: 'Orden no encontrada en la base de datos de reportes' });
         }
-        
-        const orderData = await orderRes.json();
 
         // 1. Configuramos cabeceras para forzar la descarga de PDF
         res.setHeader('Content-Type', 'application/pdf');

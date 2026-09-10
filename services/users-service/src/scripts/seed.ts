@@ -1,6 +1,6 @@
 import { Pool } from 'pg';
 import bcrypt from 'bcrypt';
-import logger from '../config/logger';
+import { logger } from '@kiora/shared';
 import '../config/env';
 
 if (process.env.NODE_ENV === 'production') {
@@ -47,7 +47,7 @@ const validateSeedPasswords = () => {
 
 async function upsertUser(user: any) {
     const existing = await pool.query(
-        'SELECT id_usu FROM Cliente WHERE correo_usu = $1 AND activo = true',
+        'SELECT id_usu FROM cliente WHERE correo_usu = $1 AND activo = true',
         [user.correo_usu]
     );
     if (existing.rows.length > 0) {
@@ -57,7 +57,7 @@ async function upsertUser(user: any) {
 
     const hashedPassword = await bcrypt.hash(user.password, 10);
     await pool.query(
-        `INSERT INTO Cliente (nom_usu, correo_usu, password_usu, rol_usu, tel_usu)
+        `INSERT INTO cliente (nom_usu, correo_usu, password_usu, rol_usu, tel_usu)
          VALUES ($1, $2, $3, $4, $5)`,
         [user.nom_usu, user.correo_usu, hashedPassword, user.rol_usu, user.tel_usu]
     );

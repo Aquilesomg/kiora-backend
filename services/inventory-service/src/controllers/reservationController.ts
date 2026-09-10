@@ -3,7 +3,7 @@
 import redisService from '../services/redisService';
 import inventoryService from '../services/inventoryService';
 import env from '../config/env';
-import logger from '../config/logger';
+import { logger } from '@kiora/shared';
 
 const reserveInventory = async (req, res) => {
     const { orderId, items } = req.body;

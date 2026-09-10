@@ -8,7 +8,7 @@
 
 -- Up Migration
 
-CREATE TABLE IF NOT EXISTS Tienda (
+CREATE TABLE IF NOT EXISTS tienda (
     id_tienda       SERIAL PRIMARY KEY,
     nombre          VARCHAR(100)   NOT NULL,
     direccion       VARCHAR(255)   NOT NULL,
@@ -22,9 +22,9 @@ CREATE TABLE IF NOT EXISTS Tienda (
 );
 
 -- Mesa: cada tienda puede tener N mesas con su código QR único
-CREATE TABLE IF NOT EXISTS Mesa (
+CREATE TABLE IF NOT EXISTS mesa (
     id_mesa         SERIAL PRIMARY KEY,
-    fk_id_tienda    INT            NOT NULL REFERENCES Tienda(id_tienda) ON DELETE CASCADE,
+    fk_id_tienda    INT            NOT NULL REFERENCES tienda(id_tienda) ON DELETE CASCADE,
     numero          INT            NOT NULL,                     -- Número visible de la mesa (1, 2, 3...)
     qr_code         VARCHAR(255)   NOT NULL UNIQUE,              -- Valor único del QR (Ej: 'tienda=1&mesa=5')
     activa          BOOLEAN        NOT NULL DEFAULT TRUE,
@@ -34,12 +34,12 @@ CREATE TABLE IF NOT EXISTS Mesa (
 
 -- Insertar la tienda por defecto (Sede Única actual del Kiosco)
 -- Esto garantiza que el sistema actual siga funcionando con store_id = 1
-INSERT INTO Tienda (id_tienda, nombre, direccion, factus_prefix, activa, estado)
+INSERT INTO tienda (id_tienda, nombre, direccion, factus_prefix, activa, estado)
 VALUES (1, 'Sede Principal', 'Dirección por configurar', 'K', TRUE, 'ABIERTO')
 ON CONFLICT (id_tienda) DO NOTHING;
 
-SELECT setval('tienda_id_tienda_seq', (SELECT MAX(id_tienda) FROM Tienda));
+SELECT setval('tienda_id_tienda_seq', (SELECT MAX(id_tienda) FROM tienda));
 
 -- Down Migration
--- DROP TABLE IF EXISTS Mesa;
--- DROP TABLE IF EXISTS Tienda;
+DROP TABLE IF EXISTS mesa;
+DROP TABLE IF EXISTS tienda;

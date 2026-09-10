@@ -11,8 +11,8 @@ export const findAll = ({ limit = 20, offset = 0, store_id = null, allowedStores
     if (allowedStores !== 'ALL' && allowedStores.length === 0) return Promise.resolve({ rows: [] });
 
     let query = `SELECT v.*, 
-                (SELECT string_agg(COALESCE(nom_prod, 'Prod #' || cod_prod), ', ') FROM Producto_Venta pv WHERE pv.fk_id_vent = v.id_vent) as productos_resumen
-             FROM Ventas v WHERE 1=1`;
+                (SELECT string_agg(COALESCE(nom_prod, 'Prod #' || cod_prod), ', ') FROM producto_venta pv WHERE pv.fk_id_vent = v.id_vent) as productos_resumen
+             FROM venta v WHERE v.estado != 'eliminada'`;
     const params: any[] = [];
     let pCount = 1;
 
@@ -35,7 +35,7 @@ export const findAll = ({ limit = 20, offset = 0, store_id = null, allowedStores
 export const countAll = ({ store_id = null, allowedStores = 'ALL' }: any = {}) => {
     if (allowedStores !== 'ALL' && allowedStores.length === 0) return Promise.resolve({ rows: [{ count: 0 }] });
     
-    let query = 'SELECT COUNT(*) FROM Ventas WHERE 1=1';
+    let query = "SELECT COUNT(*) FROM venta WHERE estado != 'eliminada'";
     const params: any[] = [];
     let pCount = 1;
 
@@ -51,7 +51,7 @@ export const countAll = ({ store_id = null, allowedStores = 'ALL' }: any = {}) =
 };
 
 export const findById = (id_vent: string | number) =>
-    db.query('SELECT * FROM Ventas WHERE id_vent = $1', [id_vent]);
+    db.query("SELECT * FROM venta WHERE id_vent = $1 AND estado != 'eliminada'", [id_vent]);
 
 /**
  * Busca una venta con sus líneas de detalle.
@@ -59,9 +59,9 @@ export const findById = (id_vent: string | number) =>
  */
 export const findByIdWithItems = async (id_vent: string | number) => {
     const [venta, items] = await Promise.all([
-        db.query('SELECT * FROM Ventas WHERE id_vent = $1', [id_vent]),
+        db.query("SELECT * FROM venta WHERE id_vent = $1 AND estado != 'eliminada'", [id_vent]),
         db.query(
-            'SELECT * FROM Producto_Venta WHERE fk_id_vent = $1 ORDER BY id',
+            'SELECT * FROM producto_venta WHERE fk_id_vent = $1 ORDER BY id',
             [id_vent]
         ),
     ]);
@@ -95,7 +95,7 @@ export const createWithItems = async ({ metodopago_usu, items, descuento_global,
         const sesion_id = sessionRes.rows[0].id;
 
         const ventaRes = await client.query(
-            `INSERT INTO Ventas (precio_prod_final, montofinal_vent, metodopago_usu, estado, sesion_id, store_id, tipo_entrega, fk_id_mesa)
+            `INSERT INTO venta (precio_prod_final, montofinal_vent, metodopago_usu, estado, sesion_id, store_id, tipo_entrega, fk_id_mesa)
              VALUES ($1, $2, $3, 'pendiente', $4, $5, $6, $7) RETURNING *`,
             [precio_prod_final, montofinal.toFixed(2), metodopago_usu || null, sesion_id, store_id, tipo_entrega, fk_id_mesa]
         );
@@ -104,7 +104,7 @@ export const createWithItems = async ({ metodopago_usu, items, descuento_global,
         const itemRows = [];
         for (const item of items) {
             const r = await client.query(
-                `INSERT INTO Producto_Venta (fk_id_vent, cod_prod, cantidad, precio_unit, nom_prod)
+                `INSERT INTO producto_venta (fk_id_vent, cod_prod, cantidad, precio_unit, nom_prod)
                  VALUES ($1, $2, $3, $4, $5) RETURNING *`,
                 [venta.id_vent, item.cod_prod, item.cantidad, item.precio_unit, item.nom_prod || null]
             );
@@ -145,7 +145,7 @@ export const insertOutboxEvent = async (eventType: string, payload: any, client?
  */
 export const updateStatus = (id_vent: string | number, estado: string, client = db) =>
     client.query(
-        'UPDATE Ventas SET estado = $1 WHERE id_vent = $2 RETURNING *',
+        'UPDATE venta SET estado = $1 WHERE id_vent = $2 RETURNING *',
         [estado, id_vent]
     );
 
@@ -156,12 +156,12 @@ export const updateStatus = (id_vent: string | number, estado: string, client = 
  */
 export const updatePaymentInfo = (id_vent: string | number, paymentIntent: string) =>
     db.query(
-        'UPDATE Ventas SET stripe_payment_id = $1, metodopago_usu = $2 WHERE id_vent = $3',
+        'UPDATE venta SET stripe_payment_id = $1, metodopago_usu = $2 WHERE id_vent = $3',
         [paymentIntent, 'stripe_tarjeta', id_vent]
     );
 
 export const remove = (id_vent: string | number) =>
-    db.query('DELETE FROM Ventas WHERE id_vent = $1 RETURNING id_vent', [id_vent]);
+    db.query("UPDATE venta SET estado = 'eliminada', deleted_at = CURRENT_TIMESTAMP WHERE id_vent = $1 RETURNING id_vent", [id_vent]);
 
 export const getStats = async (fecha: string, period = '7d', allowedStores: number[] | 'ALL' = 'ALL') => {
     if (allowedStores !== 'ALL' && allowedStores.length === 0) {
@@ -183,13 +183,13 @@ export const getStats = async (fecha: string, period = '7d', allowedStores: numb
             CASE WHEN COUNT(*) > 0 THEN SUM(montofinal_vent) / COUNT(*) ELSE 0 END AS ticket_promedio,
             (SELECT row_to_json(v) FROM (
                 SELECT id_vent, fecha_vent, montofinal_vent, estado, metodopago_usu
-                FROM Ventas
+                FROM venta
                 WHERE fecha_vent::date = $1::date
                   AND estado = 'completada'
                   ${storeFilter}
                 ORDER BY fecha_vent DESC LIMIT 1
             ) v) AS ultima_venta
-         FROM Ventas
+         FROM venta
          WHERE fecha_vent::date = $1::date
            AND estado = 'completada'
            ${storeFilter}`,
@@ -201,7 +201,7 @@ export const getStats = async (fecha: string, period = '7d', allowedStores: numb
             COUNT(*)::int AS total_ventas,
             COALESCE(SUM(montofinal_vent), 0) AS monto_total,
             CASE WHEN COUNT(*) > 0 THEN SUM(montofinal_vent) / COUNT(*) ELSE 0 END AS ticket_promedio
-         FROM Ventas
+         FROM venta
          WHERE fecha_vent::date = ($1::date - INTERVAL '1 day')
            AND estado = 'completada'
            ${storeFilter}`,
@@ -212,7 +212,7 @@ export const getStats = async (fecha: string, period = '7d', allowedStores: numb
         `SELECT 
             COUNT(*) FILTER (WHERE metodopago_usu ILIKE '%efectivo%')::int AS pagos_efectivo,
             COUNT(*) FILTER (WHERE metodopago_usu NOT ILIKE '%efectivo%' OR metodopago_usu IS NULL)::int AS pagos_tarjeta
-         FROM Ventas
+         FROM venta
          WHERE fecha_vent::date = $1::date
            AND estado = 'completada'
            ${storeFilter}`,
@@ -228,7 +228,7 @@ export const getStats = async (fecha: string, period = '7d', allowedStores: numb
                 EXTRACT(DAY FROM d) AS dow,
                 COALESCE(SUM(v.montofinal_vent), 0) AS total
             FROM generate_series(date_trunc('month', $1::date), date_trunc('month', $1::date) + interval '1 month' - interval '1 day', '1 day'::interval) d
-            LEFT JOIN Ventas v ON v.fecha_vent::date = d::date AND v.estado = 'completada' ${vStoreFilter}
+            LEFT JOIN venta v ON v.fecha_vent::date = d::date AND v.estado = 'completada' ${vStoreFilter}
             GROUP BY d
             ORDER BY d`;
     } else if (period === 'this_year') {
@@ -237,7 +237,7 @@ export const getStats = async (fecha: string, period = '7d', allowedStores: numb
                 EXTRACT(MONTH FROM d) AS dow,
                 COALESCE(SUM(v.montofinal_vent), 0) AS total
             FROM generate_series(date_trunc('year', $1::date), date_trunc('year', $1::date) + interval '11 months', '1 month'::interval) d
-            LEFT JOIN Ventas v ON date_trunc('month', v.fecha_vent::date) = d::date AND v.estado = 'completada' ${vStoreFilter}
+            LEFT JOIN venta v ON date_trunc('month', v.fecha_vent::date) = d::date AND v.estado = 'completada' ${vStoreFilter}
             GROUP BY d
             ORDER BY d`;
     } else {
@@ -247,7 +247,7 @@ export const getStats = async (fecha: string, period = '7d', allowedStores: numb
                 EXTRACT(ISODOW FROM d) AS dow,
                 COALESCE(SUM(v.montofinal_vent), 0) AS total
             FROM generate_series($1::date - INTERVAL '6 days', $1::date, '1 day'::interval) d
-            LEFT JOIN Ventas v ON v.fecha_vent::date = d::date AND v.estado = 'completada' ${vStoreFilter}
+            LEFT JOIN venta v ON v.fecha_vent::date = d::date AND v.estado = 'completada' ${vStoreFilter}
             GROUP BY d
             ORDER BY d`;
     }
@@ -289,7 +289,7 @@ export const getStats = async (fecha: string, period = '7d', allowedStores: numb
 
 export const checkProductInSales = async (cod_prod: string | number) => {
     const result = await db.query(
-        'SELECT 1 FROM Producto_Venta WHERE cod_prod = $1 LIMIT 1',
+        'SELECT 1 FROM producto_venta WHERE cod_prod = $1 LIMIT 1',
         [cod_prod]
     );
     return result.rows.length > 0;

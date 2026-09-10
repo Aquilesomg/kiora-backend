@@ -2,7 +2,7 @@
 
 import * as categoryRepository from '../repositories/categoryRepository';
 import parsePagination from '../utils/parsePagination';
-import logger from '../config/logger';
+import { logger } from '@kiora/shared';
 import { Request, Response, NextFunction } from 'express';
 
 export const getCategories = async (req: Request, res: Response, next: NextFunction) => {

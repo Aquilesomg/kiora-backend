@@ -32,11 +32,9 @@ app.get('/health', (_req, res) => res.json({
 }));
 
 // ── Readiness (verifica conectividad con Redis) ───────────────────────────
-import Redis from 'ioredis';
-const readinessClient = new Redis({
-    host: env.redis.host,
-    port: env.redis.port,
-    password: env.redis.password,
+import { createRedisClient } from '@kiora/shared';
+const readinessClient = createRedisClient({
+    name: 'notifications-readiness',
     lazyConnect: true,
     maxRetriesPerRequest: 1,
 });

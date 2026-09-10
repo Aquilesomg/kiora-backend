@@ -3,12 +3,12 @@
 -- Añade tabla ReporteFallo para soporte interno.
 
 -- Up Migration
-CREATE TABLE IF NOT EXISTS ReporteFallo (
+CREATE TABLE IF NOT EXISTS reporte_fallo (
     id_rep SERIAL PRIMARY KEY,
     descripcion TEXT NOT NULL,
     prioridad VARCHAR(20) DEFAULT 'media',
     estado VARCHAR(20) DEFAULT 'pendiente',
-    fk_id_usu INTEGER NOT NULL REFERENCES Cliente(id_usu) ON DELETE CASCADE,
+    fk_id_usu INTEGER NOT NULL REFERENCES cliente(id_usu) ON DELETE CASCADE,
     cod_prod INTEGER NULL,
     fecha_rep TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     observaciones_tecnicas TEXT NULL,
@@ -16,4 +16,4 @@ CREATE TABLE IF NOT EXISTS ReporteFallo (
 );
 
 -- Down Migration
--- DROP TABLE IF EXISTS ReporteFallo;
+DROP TABLE IF EXISTS reporte_fallo;

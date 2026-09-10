@@ -3,7 +3,7 @@ FROM node:20-alpine AS base
 WORKDIR /app
 
 COPY package*.json ./
-RUN npm install --omit=dev && npm cache clean --force
+RUN npm ci --only=production
 
 # ── Etapa final ────────────────────────────────────────────────────────────
 FROM node:20-alpine
@@ -12,9 +12,16 @@ WORKDIR /app
 RUN addgroup -S appgroup && adduser -S appuser -G appgroup
 
 COPY --from=base /app/node_modules ./node_modules
-COPY . .
+COPY package*.json ./
+COPY tsconfig.json ./
+COPY src ./src
+COPY entrypoint.sh ./
+COPY --from=shared . /shared
 
-RUN chmod +x entrypoint.sh
+RUN ln -s /app/node_modules /node_modules && npm ci --include=dev && npm run build && npm ci --omit=dev
+
+RUN chown -R appuser:appgroup /app && \
+    chmod +x entrypoint.sh
 
 USER appuser
 

@@ -53,7 +53,7 @@ const isPublicRoute = (req: Request) => {
 };
 
 // ── Middleware ─────────────────────────────────────────────────────────────
-export const authMiddleware = (req: Request, res: Response, next: NextFunction) => {
+export const authMiddleware = async (req: Request, res: Response, next: NextFunction) => {
     // 1. Verificar si es ruta pública
     if (isPublicRoute(req)) {
         return next();
@@ -66,6 +66,7 @@ export const authMiddleware = (req: Request, res: Response, next: NextFunction) 
         const kioskUserId = process.env.KIOSKO_USER_ID || '1';
         req.headers['x-user-id'] = kioskUserId;
         req.headers['x-user-role'] = 'kiosco';
+        req.headers['x-allowed-stores'] = 'ALL';
         return next();
     }
 
@@ -100,6 +101,28 @@ export const authMiddleware = (req: Request, res: Response, next: NextFunction) 
         if (decoded.scope_id) {
             req.headers['x-user-scope-id'] = String(decoded.scope_id);
         }
+
+        // Resolución centralizada de tiendas permitidas
+        let allowedStores = 'ALL';
+        
+        if (decoded.rol_usu !== 'admin' && decoded.scope_type !== 'GLOBAL') {
+            if (!decoded.scope_type || !decoded.scope_id) {
+                allowedStores = '';
+            } else if (decoded.scope_type === 'TIENDA') {
+                allowedStores = String(decoded.scope_id);
+            } else {
+                try {
+                    const STORES_SERVICE_URL = process.env.STORES_SERVICE_URL || 'http://localhost:3009';
+                    const response = await fetch(`${STORES_SERVICE_URL}/api/stores/by-scope?scope_type=${decoded.scope_type}&scope_id=${decoded.scope_id}`);
+                    const data = await response.json();
+                    allowedStores = (data.data || []).join(',');
+                } catch (err) {
+                    console.error('Error resolviendo stores en Gateway', err);
+                    allowedStores = '';
+                }
+            }
+        }
+        req.headers['x-allowed-stores'] = allowedStores;
 
         next();
     } catch (error: any) {

@@ -6,7 +6,7 @@ import swaggerUi from 'swagger-ui-express';
 import swaggerSpec from './config/swagger';
 import pool from './config/db';
 import * as blacklist from './config/blacklist';
-import logger from './config/logger';
+import { logger } from '@kiora/shared';
 import authRoutes from './routes/authRoutes';
 import incidentsRoutes from './routes/incidentsRoutes';
 import errorHandler from './middleware/errorHandler';

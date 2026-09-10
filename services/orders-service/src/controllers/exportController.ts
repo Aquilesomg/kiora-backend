@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import * as exportRepo from '../repositories/exportRepository';
-import logger from '../config/logger';
+import { logger } from '@kiora/shared';
 
 /**
  * exportController

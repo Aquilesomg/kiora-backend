@@ -1,7 +1,7 @@
 'use strict';
 
 import inventoryRepository from '../repositories/inventoryRepository';
-import logger from '../config/logger';
+import { logger } from '@kiora/shared';
 import directEmailService from './directEmailService';
 import env from '../config/env';
 import redisService from './redisService';

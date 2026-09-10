@@ -4,8 +4,8 @@ import { Ciudad } from '../models/types';
 async function findAll({ regional_id }: { regional_id?: number } = {}): Promise<Ciudad[]> {
     let query = `
         SELECT c.*, r.nombre AS regional_nombre 
-        FROM Ciudad c
-        JOIN Regional r ON c.fk_regional_id = r.id
+        FROM ciudad c
+        JOIN regional r ON c.fk_regional_id = r.id
     `;
     const params: any[] = [];
     if (regional_id) {
@@ -21,8 +21,8 @@ async function findAll({ regional_id }: { regional_id?: number } = {}): Promise<
 async function findById(id: number): Promise<Ciudad | null> {
     const { rows } = await db.query(`
         SELECT c.*, r.nombre AS regional_nombre 
-        FROM Ciudad c
-        JOIN Regional r ON c.fk_regional_id = r.id
+        FROM ciudad c
+        JOIN regional r ON c.fk_regional_id = r.id
         WHERE c.id = $1
     `, [id]);
     return rows[0] || null;
@@ -30,7 +30,7 @@ async function findById(id: number): Promise<Ciudad | null> {
 
 async function create({ nombre, fk_regional_id }: { nombre: string; fk_regional_id: number }): Promise<Ciudad> {
     const { rows } = await db.query(
-        'INSERT INTO Ciudad (nombre, fk_regional_id) VALUES ($1, $2) RETURNING *',
+        'INSERT INTO ciudad (nombre, fk_regional_id) VALUES ($1, $2) RETURNING *',
         [nombre, fk_regional_id]
     );
     return rows[0];
@@ -38,14 +38,14 @@ async function create({ nombre, fk_regional_id }: { nombre: string; fk_regional_
 
 async function update(id: number, { nombre, fk_regional_id }: { nombre?: string; fk_regional_id?: number }): Promise<Ciudad | null> {
     const { rows } = await db.query(
-        'UPDATE Ciudad SET nombre = COALESCE($1, nombre), fk_regional_id = COALESCE($2, fk_regional_id) WHERE id = $3 RETURNING *',
+        'UPDATE ciudad SET nombre = COALESCE($1, nombre), fk_regional_id = COALESCE($2, fk_regional_id) WHERE id = $3 RETURNING *',
         [nombre, fk_regional_id, id]
     );
     return rows[0] || null;
 }
 
 async function remove(id: number): Promise<number | null> {
-    const { rows } = await db.query('DELETE FROM Ciudad WHERE id = $1 RETURNING id', [id]);
+    const { rows } = await db.query('DELETE FROM ciudad WHERE id = $1 RETURNING id', [id]);
     return rows[0]?.id || null;
 }
 

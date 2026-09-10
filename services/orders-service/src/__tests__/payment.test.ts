@@ -133,7 +133,7 @@ describe('Wompi Webhook (handleWompiWebhook)', () => {
         // Verificar que el wompi_transaction_id se guardó DENTRO de la transacción
         // (UPDATE directo en la transacción de completeOrder, no llamada separada)
         expect(mockClient.query).toHaveBeenCalledWith(
-            'UPDATE Ventas SET stripe_payment_id = $1, metodopago_usu = $2 WHERE id_vent = $3',
+            'UPDATE venta SET stripe_payment_id = $1, metodopago_usu = $2 WHERE id_vent = $3',
             ['wompi_test_123', 'stripe_tarjeta', 42]
         );
     });

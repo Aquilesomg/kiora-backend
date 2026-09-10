@@ -1,5 +1,5 @@
-import Redis from 'ioredis';
-import logger from './logger';
+import { createRedisClient } from '@kiora/shared';
+import { logger } from '@kiora/shared';
 
 export const BLACKLIST_UNAVAILABLE = 'BLACKLIST_UNAVAILABLE';
 
@@ -28,14 +28,10 @@ export let client: any;
 if (process.env.NODE_ENV === 'test') {
     client = new InMemoryBlacklist();
 } else {
-    client = new Redis({
-        host: process.env.REDIS_HOST || 'localhost',
-        port: parseInt(process.env.REDIS_PORT || '6379'),
-        password: process.env.REDIS_PASSWORD || undefined,
-        retryStrategy: (times) => Math.min(times * 100, 3000),
+    client = createRedisClient({
+        name: 'users-blacklist',
         lazyConnect: false,
         maxRetriesPerRequest: 3,
-        enableOfflineQueue: true,
     });
 
     client.on('error', (err: any) => {

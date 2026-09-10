@@ -3,7 +3,7 @@ dotenv.config({ path: process.env.DOTENV_CONFIG_PATH || '.env.local' });
 import './config/tracing';
 
 import env from './config/env';
-import logger from './config/logger';
+import { logger } from '@kiora/shared';
 import app from './app';
 import { startPoller } from './services/outboxPoller';
 import { startCronJobs } from './jobs/cronJobs';

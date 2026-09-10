@@ -2,7 +2,7 @@ import 'dotenv/config';
 import './config/tracing';
 
 import env from './config/env';
-import logger from './config/logger';
+import { logger } from '@kiora/shared';
 import app from './app';
 import './jobs/expirationJob';
 

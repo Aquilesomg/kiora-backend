@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import repo from '../repositories/ciudadRepository';
-import logger from '../config/logger';
+import { logger } from '@kiora/shared';
 
 async function listCiudades(req: Request, res: Response, next: NextFunction) {
     try {

@@ -11,6 +11,7 @@ const REQUIRED_VARS = [
     'DB_HOST',
     'DB_PORT',
     'DB_NAME',
+    'DB_PASSWORD',
 ];
 
 const missing = REQUIRED_VARS.filter((v) => !process.env[v]);
@@ -50,7 +51,7 @@ export default {
         port: Number(process.env.DB_PORT),
         name: process.env.DB_NAME,
         user: process.env.DB_USER || 'postgres',
-        password: process.env.DB_PASSWORD || 'rootpassword',
+        password: process.env.DB_PASSWORD,
     },
     nodeEnv: process.env.NODE_ENV || 'development',
 };

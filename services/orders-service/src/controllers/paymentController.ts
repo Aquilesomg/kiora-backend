@@ -2,7 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import * as wompiService from '../services/wompiService';
 import * as orderService from '../services/orderService';
 import * as orderRepository from '../repositories/orderRepository';
-import logger from '../config/logger';
+import { logger } from '@kiora/shared';
 import { outgoingHeaders, fetchWithRetry, DEFAULT_TIMEOUT_MS } from '../utils/httpClient';
 
 export const generateCheckoutParams = async (req: Request, res: Response) => {

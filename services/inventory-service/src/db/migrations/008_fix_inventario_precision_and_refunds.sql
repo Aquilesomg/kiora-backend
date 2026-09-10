@@ -2,11 +2,11 @@
 -- Dominio: inventory-service
 
 -- 1. Mejorar precisión de fecha (incluir hora/minuto/segundo)
-ALTER TABLE Inventario 
+ALTER TABLE inventario 
     ALTER COLUMN fecha_mov TYPE TIMESTAMP 
     USING fecha_mov::timestamp;
 
-ALTER TABLE Inventario 
+ALTER TABLE inventario 
     ALTER COLUMN fecha_mov SET DEFAULT CURRENT_TIMESTAMP;
 
 -- 2. Corregir índice de idempotencia para permitir reembolsos

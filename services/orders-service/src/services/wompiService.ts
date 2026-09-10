@@ -1,5 +1,5 @@
 import crypto from 'crypto';
-import logger from '../config/logger';
+import { logger } from '@kiora/shared';
 
 const WOMPI_CHECKOUT_BASE = 'https://checkout.wompi.co/p/';
 

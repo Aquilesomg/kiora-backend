@@ -4,7 +4,7 @@
 -- Los registros existentes se marcan como activo = true por defecto.
 
 -- Up Migration
-ALTER TABLE Categoria ADD COLUMN IF NOT EXISTS activo BOOLEAN NOT NULL DEFAULT true;
+ALTER TABLE categoria ADD COLUMN IF NOT EXISTS activo BOOLEAN NOT NULL DEFAULT true;
 
 -- Down Migration
--- ALTER TABLE Categoria DROP COLUMN IF EXISTS activo;
+ALTER TABLE categoria DROP COLUMN IF EXISTS activo;

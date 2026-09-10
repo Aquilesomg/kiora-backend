@@ -2,37 +2,37 @@ import db from '../config/db';
 import { Cliente } from '../models/types';
 
 export const findByEmail = (correo_usu: string) =>
-    db.query('SELECT * FROM Cliente WHERE correo_usu = $1 AND activo = true', [correo_usu]);
+    db.query('SELECT * FROM cliente WHERE correo_usu = $1 AND activo = true', [correo_usu]);
 
 export const findById = (id_usu: number) =>
     db.query(
         `SELECT id_usu, nom_usu, correo_usu, rol_usu, scope_type, scope_id, bloqueado_hasta, session_version
-         FROM Cliente WHERE id_usu = $1 AND activo = true`,
+         FROM cliente WHERE id_usu = $1 AND activo = true`,
         [id_usu]
     );
 
 export const getSessionVersion = (id_usu: number) =>
     db.query(
-        'SELECT session_version FROM Cliente WHERE id_usu = $1 AND activo = true',
+        'SELECT session_version FROM cliente WHERE id_usu = $1 AND activo = true',
         [id_usu]
     );
 
 export const findByIdWithPassword = (id_usu: number) =>
     db.query(
-        'SELECT * FROM Cliente WHERE id_usu = $1 AND activo = true',
+        'SELECT * FROM cliente WHERE id_usu = $1 AND activo = true',
         [id_usu]
     );
 
 export const findProfile = (id_usu: number) =>
     db.query(
-        'SELECT id_usu, nom_usu, correo_usu, rol_usu, scope_type, scope_id, tel_usu FROM Cliente WHERE id_usu = $1 AND activo = true',
+        'SELECT id_usu, nom_usu, correo_usu, rol_usu, scope_type, scope_id, tel_usu FROM cliente WHERE id_usu = $1 AND activo = true',
         [id_usu]
     );
 
 export const findAll = (limit = 20, offset = 0) =>
     db.query(
         `SELECT id_usu, nom_usu, correo_usu, rol_usu, scope_type, scope_id, tel_usu, intentos_fallidos, bloqueado_hasta
-         FROM Cliente
+         FROM cliente
          WHERE activo = true
          ORDER BY id_usu
          LIMIT $1 OFFSET $2`,
@@ -40,16 +40,16 @@ export const findAll = (limit = 20, offset = 0) =>
     );
 
 export const countAll = () =>
-    db.query('SELECT COUNT(*) FROM Cliente WHERE activo = true');
+    db.query('SELECT COUNT(*) FROM cliente WHERE activo = true');
 
 export const findAdmins = () =>
     db.query(
-        `SELECT correo_usu FROM Cliente WHERE activo = true AND rol_usu = 'admin'`
+        `SELECT correo_usu FROM cliente WHERE activo = true AND rol_usu = 'admin'`
     );
 
 export const create = (nom_usu: string, correo_usu: string, hashedPassword: string, rol_usu?: string, scope_type?: string | null, scope_id?: number | null, tel_usu?: string) =>
     db.query(
-        `INSERT INTO Cliente (nom_usu, correo_usu, password_usu, rol_usu, scope_type, scope_id, tel_usu)
+        `INSERT INTO cliente (nom_usu, correo_usu, password_usu, rol_usu, scope_type, scope_id, tel_usu)
          VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id_usu`,
         [nom_usu, correo_usu, hashedPassword, rol_usu || 'customer', scope_type || null, scope_id || null, tel_usu || null]
     );
@@ -59,7 +59,7 @@ export const update = (id_usu: number, fields: Partial<Cliente>) => {
     const entries = Object.entries(fields).filter(([key]) => allowed.includes(key));
     const setClauses = entries.map(([key], i) => `${key} = $${i + 1}`).join(', ');
     return db.query(
-        `UPDATE Cliente SET ${setClauses}
+        `UPDATE cliente SET ${setClauses}
          WHERE id_usu = $${entries.length + 1} AND activo = true
          RETURNING id_usu, nom_usu, correo_usu, rol_usu, scope_type, scope_id, tel_usu`,
         [...entries.map(([, val]) => val), id_usu]
@@ -68,13 +68,13 @@ export const update = (id_usu: number, fields: Partial<Cliente>) => {
 
 export const softDelete = (id_usu: number) =>
     db.query(
-        'UPDATE Cliente SET activo = false WHERE id_usu = $1 AND activo = true RETURNING id_usu',
+        'UPDATE cliente SET activo = false WHERE id_usu = $1 AND activo = true RETURNING id_usu',
         [id_usu]
     );
 
 export const updateRole = (id_usu: number, rol_usu: string, scope_type?: string | null, scope_id?: number | null) =>
     db.query(
-        `UPDATE Cliente SET rol_usu = $1, scope_type = $2, scope_id = $3
+        `UPDATE cliente SET rol_usu = $1, scope_type = $2, scope_id = $3
          WHERE id_usu = $4 AND activo = true
          RETURNING id_usu, nom_usu, correo_usu, rol_usu, scope_type, scope_id`,
         [rol_usu, scope_type || null, scope_id || null, id_usu]
@@ -82,25 +82,25 @@ export const updateRole = (id_usu: number, rol_usu: string, scope_type?: string 
 
 export const incrementLoginAttempts = (id_usu: number, intentos: number) =>
     db.query(
-        'UPDATE Cliente SET intentos_fallidos = $1 WHERE id_usu = $2',
+        'UPDATE cliente SET intentos_fallidos = $1 WHERE id_usu = $2',
         [intentos, id_usu]
     );
 
 export const blockUser = (id_usu: number, intentos: number) =>
     db.query(
-        `UPDATE Cliente SET intentos_fallidos = $1, bloqueado_hasta = '9999-12-31 23:59:59' WHERE id_usu = $2 RETURNING id_usu, nom_usu, correo_usu`,
+        `UPDATE cliente SET intentos_fallidos = $1, bloqueado_hasta = '9999-12-31 23:59:59' WHERE id_usu = $2 RETURNING id_usu, nom_usu, correo_usu`,
         [intentos, id_usu]
     );
 
 export const resetLoginAttempts = (id_usu: number) =>
     db.query(
-        'UPDATE Cliente SET intentos_fallidos = 0, bloqueado_hasta = NULL WHERE id_usu = $1',
+        'UPDATE cliente SET intentos_fallidos = 0, bloqueado_hasta = NULL WHERE id_usu = $1',
         [id_usu]
     );
 
 export const unlock = (id_usu: number) =>
     db.query(
-        'UPDATE Cliente SET intentos_fallidos = 0, bloqueado_hasta = NULL WHERE id_usu = $1 RETURNING id_usu, nom_usu, correo_usu',
+        'UPDATE cliente SET intentos_fallidos = 0, bloqueado_hasta = NULL WHERE id_usu = $1 RETURNING id_usu, nom_usu, correo_usu',
         [id_usu]
     );
 
@@ -128,7 +128,7 @@ export const findValidResetCodeByEmail = (correo_usu: string, code: string) =>
     db.query(
         `SELECT rt.id, rt.id_usu, rt.expira_en
          FROM reset_tokens rt
-         JOIN Cliente c ON c.id_usu = rt.id_usu
+         JOIN cliente c ON c.id_usu = rt.id_usu
          WHERE c.correo_usu = $1
            AND c.activo = true
            AND rt.token = $2
@@ -145,7 +145,7 @@ export const markTokenAsUsed = (token: string) =>
 
 export const updatePassword = (id_usu: number, hashedPassword: string) =>
     db.query(
-        `UPDATE Cliente
+        `UPDATE cliente
          SET password_usu = $1, session_version = session_version + 1
          WHERE id_usu = $2 RETURNING id_usu`,
         [hashedPassword, id_usu]
@@ -167,7 +167,7 @@ export const resetPasswordWithToken = async (plainToken: string, hashedPassword:
         }
         const { id_usu } = sel.rows[0];
         const userUpd = await client.query(
-            `UPDATE Cliente
+            `UPDATE cliente
              SET password_usu = $1, session_version = session_version + 1
              WHERE id_usu = $2 AND activo = true
              RETURNING id_usu`,
@@ -202,7 +202,7 @@ export const resetPasswordWithCode = async (correo_usu: string, code: string, ha
         const sel = await client.query(
             `SELECT rt.id, rt.id_usu
              FROM reset_tokens rt
-             JOIN Cliente c ON c.id_usu = rt.id_usu
+             JOIN cliente c ON c.id_usu = rt.id_usu
              WHERE c.correo_usu = $1
                AND c.activo = true
                AND rt.token = $2
@@ -217,7 +217,7 @@ export const resetPasswordWithCode = async (correo_usu: string, code: string, ha
         }
         const { id, id_usu } = sel.rows[0];
         const userUpd = await client.query(
-            `UPDATE Cliente
+            `UPDATE cliente
              SET password_usu = $1, session_version = session_version + 1
              WHERE id_usu = $2 AND activo = true
              RETURNING id_usu`,

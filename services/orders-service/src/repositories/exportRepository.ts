@@ -32,9 +32,9 @@ export const findFullExport = (filters: { desde?: string; hasta?: string } = {})
             f.precio_prod   AS factura_precio,
             f.montototal_vent AS factura_monto_total,
             f.emitida_en    AS factura_emitida_en
-         FROM Ventas v
-         LEFT JOIN Producto_Venta pv ON pv.fk_id_vent = v.id_vent
-         LEFT JOIN Factura f ON f.fk_id_vent = v.id_vent
+         FROM venta v
+         LEFT JOIN producto_venta pv ON pv.fk_id_vent = v.id_vent
+         LEFT JOIN factura f ON f.fk_id_vent = v.id_vent
          WHERE ($1::timestamp IS NULL OR v.fecha_vent >= $1)
            AND ($2::timestamp IS NULL OR v.fecha_vent <= $2)
          ORDER BY v.fecha_vent DESC, v.id_vent, pv.id`,
@@ -58,8 +58,8 @@ export const findSummary = (filters: { desde?: string; hasta?: string } = {}) =>
             COUNT(DISTINCT CASE WHEN v.estado = 'cancelada'  THEN v.id_vent END) AS ventas_canceladas,
             COALESCE(SUM(pv.cantidad), 0) AS total_productos_vendidos,
             COUNT(DISTINCT pv.cod_prod) AS productos_unicos
-         FROM Ventas v
-         LEFT JOIN Producto_Venta pv ON pv.fk_id_vent = v.id_vent
+         FROM venta v
+         LEFT JOIN producto_venta pv ON pv.fk_id_vent = v.id_vent
          WHERE ($1::timestamp IS NULL OR v.fecha_vent >= $1)
            AND ($2::timestamp IS NULL OR v.fecha_vent <= $2)`,
         [desde || null, hasta || null]
@@ -76,7 +76,7 @@ export const findByPaymentMethod = (filters: { desde?: string; hasta?: string } 
             COALESCE(metodopago_usu, 'No especificado') AS metodo_pago,
             COUNT(*) AS cantidad_ventas,
             COALESCE(SUM(montofinal_vent), 0) AS monto_total
-         FROM Ventas
+         FROM venta
          WHERE ($1::timestamp IS NULL OR fecha_vent >= $1)
            AND ($2::timestamp IS NULL OR fecha_vent <= $2)
          GROUP BY metodopago_usu
@@ -96,7 +96,7 @@ export const findByDay = (filters: { desde?: string; hasta?: string } = {}) => {
             COUNT(*) AS cantidad_ventas,
             COALESCE(SUM(montofinal_vent), 0) AS monto_total,
             COALESCE(AVG(montofinal_vent), 0) AS ticket_promedio
-         FROM Ventas
+         FROM venta
          WHERE ($1::timestamp IS NULL OR fecha_vent >= $1)
            AND ($2::timestamp IS NULL OR fecha_vent <= $2)
          GROUP BY DATE(fecha_vent)

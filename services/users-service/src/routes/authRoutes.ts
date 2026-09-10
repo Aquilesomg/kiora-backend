@@ -45,8 +45,11 @@ router.post('/logout', verifyToken, authController.logout);
 router.get('/users', verifyToken, isAdmin, authController.getUsers);
 
 const internalOnly = (req: Request, res: Response, next: NextFunction): any => {
+    if (!process.env.INTERNAL_SECRET) {
+        return res.status(500).json({ error: 'Internal configuration error: INTERNAL_SECRET missing' });
+    }
     const internalSecret = (req.headers['x-internal-secret'] as string);
-    if (internalSecret === (process.env.INTERNAL_SECRET || 'kiora_internal_2024')) {
+    if (internalSecret === process.env.INTERNAL_SECRET) {
         return next();
     }
     return res.status(403).json({ error: 'Forbidden internal route' });

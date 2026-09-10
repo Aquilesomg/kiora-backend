@@ -7,7 +7,7 @@
 -- otros dominios aquí.
 
 -- Up Migration
-CREATE TABLE IF NOT EXISTS Cliente (
+CREATE TABLE IF NOT EXISTS cliente (
     id_usu       SERIAL PRIMARY KEY,
     nom_usu      VARCHAR(60),
     correo_usu   VARCHAR(100),
@@ -17,4 +17,4 @@ CREATE TABLE IF NOT EXISTS Cliente (
 );
 
 -- Down Migration
--- DROP TABLE IF EXISTS Cliente;
+DROP TABLE IF EXISTS cliente;

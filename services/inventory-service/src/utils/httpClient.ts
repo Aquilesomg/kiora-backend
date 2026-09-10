@@ -1,6 +1,6 @@
 'use strict';
 
-import logger from '../config/logger';
+import { logger } from '@kiora/shared';
 
 /**
  * Cliente HTTP compartido para comunicación inter-servicio.

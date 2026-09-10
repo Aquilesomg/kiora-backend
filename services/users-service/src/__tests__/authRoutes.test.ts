@@ -850,7 +850,7 @@ describe('POST /api/auth/reset-password', () => {
         const clientQuery = jest.fn()
             .mockResolvedValueOnce({ rows: [] }) // BEGIN
             .mockResolvedValueOnce({ rows: [{ id: 1, id_usu: 5 }] }) // SELECT … FOR UPDATE
-            .mockResolvedValueOnce({ rows: [{ id_usu: 5 }] }) // UPDATE Cliente
+            .mockResolvedValueOnce({ rows: [{ id_usu: 5 }] }) // UPDATE cliente
             .mockResolvedValueOnce({ rows: [] }) // UPDATE reset_tokens
             .mockResolvedValueOnce({ rows: [] }); // COMMIT
         db.connect.mockResolvedValueOnce({ query: clientQuery, release: jest.fn() });

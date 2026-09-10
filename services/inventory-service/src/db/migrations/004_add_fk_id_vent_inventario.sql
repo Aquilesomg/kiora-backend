@@ -5,7 +5,7 @@
 -- y evitar duplicados cuando una orden se completa más de una vez.
 
 -- Up Migration
-ALTER TABLE Inventario
+ALTER TABLE inventario
     ADD COLUMN IF NOT EXISTS fk_id_vent INTEGER;
 
 -- Índice único parcial: solo una salida automática por venta+producto
@@ -14,5 +14,5 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_inventario_venta_producto
     WHERE fk_id_vent IS NOT NULL;
 
 -- Down Migration
--- DROP INDEX IF EXISTS uq_inventario_venta_producto;
--- ALTER TABLE Inventario DROP COLUMN IF EXISTS fk_id_vent;
+DROP INDEX IF EXISTS uq_inventario_venta_producto;
+ALTER TABLE inventario DROP COLUMN IF EXISTS fk_id_vent;

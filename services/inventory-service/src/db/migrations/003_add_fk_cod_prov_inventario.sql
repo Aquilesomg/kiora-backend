@@ -4,8 +4,8 @@
 -- de entradas de mercancía por proveedor.
 
 -- Up Migration
-ALTER TABLE Inventario
-    ADD COLUMN IF NOT EXISTS fk_cod_prov INTEGER REFERENCES Proveedor(cod_prov) ON DELETE SET NULL;
+ALTER TABLE inventario
+    ADD COLUMN IF NOT EXISTS fk_cod_prov INTEGER REFERENCES proveedor(cod_prov) ON DELETE SET NULL;
 
 -- Down Migration
--- ALTER TABLE Inventario DROP COLUMN IF EXISTS fk_cod_prov;
+ALTER TABLE inventario DROP COLUMN IF EXISTS fk_cod_prov;

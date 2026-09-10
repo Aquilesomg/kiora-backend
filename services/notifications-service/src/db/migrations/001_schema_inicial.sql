@@ -2,7 +2,7 @@
 -- Dominio: notifications-service
 
 -- Up Migration
-CREATE TABLE IF NOT EXISTS Alerta (
+CREATE TABLE IF NOT EXISTS alerta (
     id SERIAL PRIMARY KEY,
     tipo VARCHAR(50) NOT NULL, -- 'stock_bajo', 'vencimiento', etc.
     mensaje TEXT NOT NULL,
@@ -15,4 +15,4 @@ CREATE INDEX idx_alerta_leida ON Alerta(leida);
 CREATE INDEX idx_alerta_fecha ON Alerta(fecha_creacion DESC);
 
 -- Down Migration
--- DROP TABLE IF EXISTS Alerta;
+DROP TABLE IF EXISTS alerta;

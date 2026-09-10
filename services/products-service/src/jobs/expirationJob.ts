@@ -1,13 +1,10 @@
 import cron from 'node-cron';
-import Redis from 'ioredis';
+import { createRedisClient } from '@kiora/shared';
 import db from '../config/db';
-import logger from '../config/logger';
+import { logger } from '@kiora/shared';
 
-const redisClient = process.env.REDIS_HOST
-    ? new Redis({
-          host: process.env.REDIS_HOST,
-          port: Number(process.env.REDIS_PORT) || 6379,
-      })
+const redisClient = process.env.REDIS_HOST || process.env.REDIS_SENTINEL_HOSTS
+    ? createRedisClient({ name: 'products-expiration-job' })
     : null;
 
 /**
@@ -19,7 +16,7 @@ cron.schedule('0 0 * * *', async () => {
     logger.info('Iniciando job automático de revisión de caducidad de productos...');
     try {
         const result = await db.query(
-            "SELECT cod_prod, nom_prod, TO_CHAR(fechaven_prod, 'YYYY-MM-DD') as fecha FROM Producto WHERE fechaven_prod < CURRENT_DATE"
+            "SELECT cod_prod, nom_prod, TO_CHAR(fechaven_prod, 'YYYY-MM-DD') as fecha FROM producto WHERE fechaven_prod < CURRENT_DATE"
         );
         
         if (result.rows.length > 0) {

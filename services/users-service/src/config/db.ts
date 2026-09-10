@@ -1,6 +1,6 @@
 import { Pool } from 'pg';
 import './env';
-import logger from './logger';
+import { logger } from '@kiora/shared';
 
 const pool = new Pool({
     user: process.env.DB_USER,

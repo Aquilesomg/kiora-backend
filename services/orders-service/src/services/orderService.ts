@@ -1,7 +1,7 @@
 import * as orderRepository from '../repositories/orderRepository';
 import * as invoiceRepository from '../repositories/invoiceRepository';
 import db from '../config/db';
-import logger from '../config/logger';
+import { logger } from '@kiora/shared';
 import * as stripeService from './stripeService';
 import { outgoingHeaders, fetchWithRetry, NOTIFY_TIMEOUT_MS } from '../utils/httpClient';
 
@@ -44,7 +44,7 @@ export async function createOrder(data: any) {
  * Flujo:
  * 1. Validar estado de la orden (idempotencia, transición válida)
  * 2. BEGIN transacción
- *    a. UPDATE Ventas → 'completada' (+ stripe_payment_id si aplica)
+ *    a. UPDATE venta → 'completada' (+ stripe_payment_id si aplica)
  *    b. INSERT Factura
  *    c. INSERT outbox_events (inventory.movement) × N ítems
  * 3. COMMIT
@@ -96,7 +96,7 @@ export async function completeOrder(orderId: string | number, reqHeaders: any, s
         //     datos huérfanos (orden completada sin ID de pago → imposible reembolsar)
         if (stripePaymentId) {
             await client.query(
-                'UPDATE Ventas SET stripe_payment_id = $1, metodopago_usu = $2 WHERE id_vent = $3',
+                'UPDATE venta SET stripe_payment_id = $1, metodopago_usu = $2 WHERE id_vent = $3',
                 [stripePaymentId, 'stripe_tarjeta', orderId]
             );
         }
@@ -134,6 +134,33 @@ export async function completeOrder(orderId: string | number, reqHeaders: any, s
                 orderId: Number(orderId),
                 montofinal_vent: updatedOrder.montofinal_vent,
                 metodopago_usu: updatedOrder.metodopago_usu,
+            },
+            client as any
+        );
+
+        // 5. Insertar evento outbox para sincronización con SIESA ERP
+        await orderRepository.insertOutboxEvent(
+            'siesa.sync_order',
+            {
+                orderId: Number(orderId),
+                store_id: updatedOrder.store_id,
+                total: updatedOrder.montofinal_vent,
+                items: order.items
+            },
+            client as any
+        );
+
+        // 6. Insertar evento outbox para sincronización CQRS (reports-service)
+        await orderRepository.insertOutboxEvent(
+            'reports.sync_order',
+            {
+                orderId: Number(orderId),
+                estado: updatedOrder.estado,
+                store_id: updatedOrder.store_id,
+                montofinal_vent: updatedOrder.montofinal_vent,
+                metodopago_usu: updatedOrder.metodopago_usu,
+                fecha_creacion: updatedOrder.fecha_creacion || new Date().toISOString(),
+                items: order.items
             },
             client as any
         );
@@ -264,6 +291,21 @@ export async function updateStatus(orderId: string | number, estado: string, req
             } else {
                 logger.warn('Reembolso: no se encontró factura Factus para emitir NC', { orderId });
             }
+
+            // 2c. Evento outbox para sincronización CQRS (reports-service)
+            await orderRepository.insertOutboxEvent(
+                'reports.sync_order',
+                {
+                    orderId: Number(orderId),
+                    estado: 'reembolsada', // Actualizado
+                    store_id: order.store_id,
+                    montofinal_vent: order.montofinal_vent,
+                    metodopago_usu: order.metodopago_usu,
+                    fecha_creacion: order.fecha_creacion || new Date().toISOString(),
+                    items: order.items
+                },
+                client as any
+            );
 
             await client.query('COMMIT');
             logger.info('Reembolso encolado vía Outbox (inventario + NC Factus)', { orderId, items: order.items.length });

@@ -3,8 +3,8 @@ import * as orderRepository from '../repositories/orderRepository';
 import * as orderService from '../services/orderService';
 import { parsePagination } from '../utils/parsePagination';
 import { logActivity } from '../utils/logActivity';
-import { getAllowedStoreIds } from '../utils/rbacUtils';
-import logger from '../config/logger';
+import { logger } from '@kiora/shared';
+import redisClient from '../config/redis';
 
 /**
  * orderController
@@ -18,7 +18,9 @@ export const getOrders = async (req: Request, res: Response, next: NextFunction)
         const { page, limit, offset } = parsePagination(req.query);
         const requestedStoreId = req.query.store_id ? Number(req.query.store_id) : null;
         
-        const allowedStores = await getAllowedStoreIds(req);
+        const storesHeader = req.headers['x-allowed-stores'];
+        const allowedStores = storesHeader === 'ALL' ? 'ALL' : (typeof storesHeader === 'string' ? storesHeader.split(',').map(Number) : []);
+
         if (allowedStores !== 'ALL' && allowedStores.length === 0) {
             return res.status(403).json({ error: 'No tienes acceso a ninguna tienda.', code: 'FORBIDDEN_SCOPE' });
         }
@@ -106,6 +108,11 @@ export const updateOrderStatus = async (req: Request, res: Response, next: NextF
 // DELETE /api/orders/:id
 export const deleteOrder = async (req: Request, res: Response, next: NextFunction) => {
     try {
+        const role = req.headers['x-user-role'] as string;
+        if (role !== 'admin') {
+            return res.status(403).json({ error: 'Solo los administradores pueden eliminar ventas.', code: 'FORBIDDEN' });
+        }
+
         const result = await orderRepository.remove((req.params.id as string));
         if (result.rows.length === 0) {
             return res.status(404).json({ error: 'Venta no encontrada.', code: 'NOT_FOUND' });
@@ -124,9 +131,22 @@ export const getStats = async (req: Request, res: Response, next: NextFunction) 
         const fecha = req.query.fecha || new Date().toISOString().slice(0, 10);
         const period = req.query.period || '7d';
         
-        const allowedStores = await getAllowedStoreIds(req);
+        const storesHeader = req.headers['x-allowed-stores'];
+        const allowedStores = storesHeader === 'ALL' ? 'ALL' : (typeof storesHeader === 'string' ? storesHeader.split(',').map(Number) : []);
+
         if (allowedStores !== 'ALL' && allowedStores.length === 0) {
             return res.status(403).json({ error: 'No tienes acceso a ninguna tienda.', code: 'FORBIDDEN_SCOPE' });
+        }
+
+        const cacheKey = `stats:${fecha}:${period}:${Array.isArray(allowedStores) ? allowedStores.join(',') : allowedStores}`;
+        
+        try {
+            const cachedData = await redisClient.get(cacheKey);
+            if (cachedData) {
+                return res.status(200).json(JSON.parse(cachedData));
+            }
+        } catch (redisErr) {
+            logger.warn('Error accediendo a Redis para caché de stats', { error: (redisErr as Error).message });
         }
 
         const data = await orderRepository.getStats(fecha as string, period as string, allowedStores);
@@ -140,7 +160,7 @@ export const getStats = async (req: Request, res: Response, next: NextFunction) 
         const trendMonto = calcTrend(Number(data.hoy.monto_total), Number(data.ayer.monto_total));
         const trendTicket = calcTrend(Number(data.hoy.ticket_promedio), Number(data.ayer.ticket_promedio));
 
-        res.status(200).json({
+        const responseData = {
             fecha,
             ventas_hoy: Number(data.hoy.total_ventas),
             monto_total: Number(data.hoy.monto_total).toFixed(2),
@@ -154,7 +174,15 @@ export const getStats = async (req: Request, res: Response, next: NextFunction) 
             pagos_efectivo: data.pagos.pagos_efectivo,
             pagos_tarjeta: data.pagos.pagos_tarjeta,
             evolucion_ventas: data.evolucion
-        });
+        };
+
+        try {
+            await redisClient.setex(cacheKey, 60, JSON.stringify(responseData));
+        } catch (redisErr) {
+            logger.warn('Error guardando en Redis para caché de stats', { error: (redisErr as Error).message });
+        }
+
+        res.status(200).json(responseData);
     } catch (error: unknown) {
         logger.error('error', { error: (error as Error).message });
         next(error);

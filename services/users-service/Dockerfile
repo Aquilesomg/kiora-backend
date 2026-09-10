@@ -18,8 +18,9 @@ COPY package*.json ./
 COPY tsconfig.json ./
 COPY src ./src
 COPY entrypoint.sh ./
+COPY --from=shared . /shared
 
-RUN npm ci --include=dev && npm run build && npm ci --omit=dev
+RUN ln -s /app/node_modules /node_modules && npm ci --include=dev && npm run build && npm ci --omit=dev
 
 # Pre-crear carpeta si necesita y dar permisos
 RUN chown -R appuser:appgroup /app && \

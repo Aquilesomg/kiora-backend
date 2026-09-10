@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import * as invoiceRepository from '../repositories/invoiceRepository';
 import * as orderRepository from '../repositories/orderRepository';
-import logger from '../config/logger';
+import { logger } from '@kiora/shared';
 
 // GET /api/orders/invoices
 export const getInvoices = async (req: Request, res: Response, next: NextFunction) => {

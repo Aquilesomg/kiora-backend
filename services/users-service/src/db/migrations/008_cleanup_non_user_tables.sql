@@ -14,14 +14,14 @@
 
 -- Up Migration
 -- El orden importa: primero las tablas dependientes, luego las base.
-DROP TABLE IF EXISTS Factura;
-DROP TABLE IF EXISTS Producto_Venta;
-DROP TABLE IF EXISTS Ventas;
-DROP TABLE IF EXISTS Suministra;
-DROP TABLE IF EXISTS Inventario;
-DROP TABLE IF EXISTS Producto;
-DROP TABLE IF EXISTS Proveedor;
-DROP TABLE IF EXISTS Categoria;
+DROP TABLE IF EXISTS factura;
+DROP TABLE IF EXISTS producto_venta;
+DROP TABLE IF EXISTS venta;
+DROP TABLE IF EXISTS suministra;
+DROP TABLE IF EXISTS inventario;
+DROP TABLE IF EXISTS producto;
+DROP TABLE IF EXISTS proveedor;
+DROP TABLE IF EXISTS categoria;
 
 -- Down Migration
 -- No restauramos: estas tablas no pertenecen a este servicio.

@@ -20,3 +20,7 @@ services/ai-service/token.json
 __pycache__/
 *.pyc
 
+
+# Archivos compilados (TypeScript)
+dist/
+build/

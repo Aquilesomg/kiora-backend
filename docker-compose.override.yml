@@ -1,0 +1,103 @@
+services:
+  # ─────────────────────────────────────────────
+  # Traefik Dashboard para desarrollo local
+  # ─────────────────────────────────────────────
+
+  # ─────────────────────────────────────────────
+  # Herramientas de Desarrollo
+  # ─────────────────────────────────────────────
+  
+  # pgAdmin — interfaz visual (se conecta a los 5 databases)
+  kiora-pgadmin:
+    image: dpage/pgadmin4
+    container_name: kiora_pgadmin
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@kiora.com
+      PGADMIN_DEFAULT_PASSWORD: admin
+    ports:
+    - "5050:80"
+    networks:
+    - kiora-backend-net
+    volumes:
+    - pgadmin_data:/var/lib/pgadmin
+    depends_on:
+    - users-db
+    - products-db
+    - inventory-db
+    - orders-db
+    - notifications-db
+
+  # Jaeger — Distributed Tracing UI
+  jaeger:
+    image: jaegertracing/all-in-one:1.58
+    container_name: kiora_jaeger
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+    ports:
+    - "16686:16686"     # UI
+    - "4318:4318"       # OTLP HTTP receiver
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+    networks:
+    - kiora-backend-net
+
+  # Prometheus — Métricas
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    container_name: kiora_prometheus
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+    ports:
+    - "9090:9090"
+    volumes:
+    - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    - prometheus_data:/prometheus
+    command:
+    - '--config.file=/etc/prometheus/prometheus.yml'
+    - '--storage.tsdb.retention.time=7d'
+    networks:
+    - kiora-backend-net
+
+  # Grafana — Dashboards
+  grafana:
+    image: grafana/grafana:11.2.2
+    container_name: kiora_grafana
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+    ports:
+    - "3100:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+    networks:
+    - kiora-backend-net
+    volumes:
+    - grafana_data:/var/lib/grafana
+    - ./grafana/provisioning:/etc/grafana/provisioning:ro
+    - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+    - prometheus
+    - jaeger
+
+volumes:
+  pgadmin_data:
+  prometheus_data:
+  grafana_data:

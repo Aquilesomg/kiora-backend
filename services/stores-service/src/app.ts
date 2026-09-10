@@ -2,7 +2,7 @@ import express, { Request, Response, NextFunction } from 'express';
 import helmet from 'helmet';
 import cors from 'cors';
 import { env } from './config/env';
-import logger from './config/logger';
+import { logger } from '@kiora/shared';
 import { correlationMiddleware } from './middlewares/correlationMiddleware';
 import promClient from 'prom-client';
 import db from './config/db';

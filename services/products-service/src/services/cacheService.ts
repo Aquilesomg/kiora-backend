@@ -1,10 +1,10 @@
 'use strict';
 
-import Redis from 'ioredis';
-import logger from '../config/logger';
+import { createRedisClient } from '@kiora/shared';
+import { logger } from '@kiora/shared';
 import env from '../config/env';
 
-let redis: Redis | null = null;
+let redis: ReturnType<typeof createRedisClient> | null = null;
 
 const metrics = {
     hits: 0,
@@ -16,16 +16,10 @@ const metrics = {
 export function getRedis() {
     if (redis) return redis;
 
-    redis = new Redis({
-        host: env.redis.host,
-        port: env.redis.port,
-        password: env.redis.password,
+    redis = createRedisClient({
+        name: 'products-cache',
         lazyConnect: true,
         maxRetriesPerRequest: 1,
-        retryStrategy(times) {
-            if (times > 3) return null;
-            return Math.min(times * 200, 2000);
-        },
     });
 
     redis.on('connect', () => logger.info('Redis cache conectado'));

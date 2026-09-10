@@ -1,6 +1,6 @@
 import multer from 'multer';
 import path from 'path';
-import logger from '../config/logger';
+import { logger } from '@kiora/shared';
 
 const UPLOAD_DIR = path.join(__dirname, '..', 'public', 'uploads');
 

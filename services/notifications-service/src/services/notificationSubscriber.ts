@@ -1,9 +1,9 @@
 'use strict';
 
-import Redis from 'ioredis';
 import logger from '../config/logger.js';
 import { sendEmail  } from '../services/emailService.js';
 import alertRepository from '../repositories/alertRepository.js';
+import { createRedisClient } from '../../../../shared/redis/createRedisClient.js';
 
 /**
  * Suscribe al stream Redis de notificaciones usando XREADGROUP
@@ -11,17 +11,15 @@ import alertRepository from '../repositories/alertRepository.js';
  *
  * Los mensajes se persisten en el stream y se entregan una sola vez
  * por consumer group. Si el servicio se cae, al reiniciar retoma
- * los mensajes pendientes (no ACK'd).
+ * los mensajes pendientes (no ACK'd)
  *
- * @param {{ host: string, port: number, password?: string, notificationsStream: string, consumerGroup: string }} redisConfig
+ * @param {{ notificationsStream: string, consumerGroup: string }} redisConfig
  * @param {string} from - Dirección del remitente SMTP
  */
 function startSubscriber(redisConfig, from) {
-    const redis = new Redis({
-        host: redisConfig.host,
-        port: redisConfig.port,
-        password: redisConfig.password,
-        retryStrategy: (times) => Math.min(times * 100, 3000),
+    const redis = createRedisClient({
+        name: 'notifications-subscriber',
+        maxRetriesPerRequest: null,
     });
 
     const stream = redisConfig.notificationsStream;

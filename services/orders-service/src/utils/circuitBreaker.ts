@@ -1,7 +1,7 @@
 'use strict';
 
 import CircuitBreaker from 'opossum';
-import logger from '../config/logger';
+import { logger } from '@kiora/shared';
 
 /**
  * Métricas internas del circuit breaker para observabilidad.

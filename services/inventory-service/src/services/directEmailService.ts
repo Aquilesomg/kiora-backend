@@ -1,7 +1,7 @@
 'use strict';
 
 import nodemailer from 'nodemailer';
-import logger from '../config/logger';
+import { logger } from '@kiora/shared';
 
 let transporter = null;
 
@@ -31,10 +31,14 @@ function initTransporter() {
 async function getAdminEmails() {
     const baseUrl = process.env.USERS_SERVICE_URL || 'http://users-service:3001';
     try {
+        if (!process.env.INTERNAL_SECRET) {
+            logger.error('INTERNAL_SECRET no está configurado, omitiendo petición');
+            return [];
+        }
         const res = await fetch(`${baseUrl}/api/auth/users/admins`, {
             signal: AbortSignal.timeout(5000),
             headers: {
-                'x-internal-secret': process.env.INTERNAL_SECRET || 'kiora_internal_2024'
+                'x-internal-secret': process.env.INTERNAL_SECRET
             }
         });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);

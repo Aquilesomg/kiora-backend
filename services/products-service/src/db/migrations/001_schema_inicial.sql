@@ -6,22 +6,22 @@
 -- no existen aquí — la consistencia se mantiene a nivel de aplicación.
 
 -- Up Migration
-CREATE TABLE IF NOT EXISTS Categoria (
+CREATE TABLE IF NOT EXISTS categoria (
     cod_cat     SERIAL PRIMARY KEY,
     nom_cat     VARCHAR(40)  NOT NULL,
     descrip_cat TEXT
 );
 
-CREATE TABLE IF NOT EXISTS Producto (
+CREATE TABLE IF NOT EXISTS producto (
     cod_prod        SERIAL PRIMARY KEY,
     nom_prod        VARCHAR(100)   NOT NULL,
     descrip_prod    TEXT,
     precio_unitario DECIMAL(10, 2) NOT NULL CHECK (precio_unitario >= 0),
     fechaven_prod   DATE,
     -- FK local: categoría está en este mismo servicio
-    fk_cod_cat      INT REFERENCES Categoria(cod_cat) ON DELETE SET NULL
+    fk_cod_cat      INT REFERENCES categoria(cod_cat) ON DELETE SET NULL
 );
 
 -- Down Migration
--- DROP TABLE IF EXISTS Producto;
--- DROP TABLE IF EXISTS Categoria;
+DROP TABLE IF EXISTS producto;
+DROP TABLE IF EXISTS categoria;

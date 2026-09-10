@@ -4,11 +4,11 @@ async function syncStock() {
     console.log('Starting stock sync script...');
     
     const inventoryPool = new Pool({
-        connectionString: 'postgres://postgres:rootpassword@inventory-db:5432/kiora_inventory'
+        connectionString: process.env.INVENTORY_DB_URL
     });
 
     const productsPool = new Pool({
-        connectionString: 'postgres://postgres:rootpassword@products-db:5432/kiora_products'
+        connectionString: process.env.PRODUCTS_DB_URL
     });
 
     try {

@@ -205,7 +205,7 @@ Todas son validadas en `src/config/env.js` al arrancar. Si falta alguna, el proc
 ### Tabla principal: `Cliente`
 
 ```sql
-CREATE TABLE Cliente (
+CREATE TABLE cliente (
     id_usu            SERIAL PRIMARY KEY,
     nom_usu           VARCHAR(60),
     correo_usu        VARCHAR(100) UNIQUE,
@@ -223,7 +223,7 @@ CREATE TABLE Cliente (
 ```sql
 CREATE TABLE reset_tokens (
     id        SERIAL PRIMARY KEY,
-    id_usu    INT NOT NULL REFERENCES Cliente(id_usu),
+    id_usu    INT NOT NULL REFERENCES cliente(id_usu),
     token     VARCHAR(255) NOT NULL,
     expira_en TIMESTAMP NOT NULL,          -- 15 minutos desde creación
     usado     BOOLEAN NOT NULL DEFAULT false,
@@ -312,15 +312,15 @@ const validate = (schema) => (req, res, next) => {
 
 | Función | SQL | Descripción |
 |---|---|---|
-| `findByEmail(email)` | `SELECT * FROM Cliente WHERE correo_usu = $1 AND activo = true` | Búsqueda para login |
+| `findByEmail(email)` | `SELECT * FROM cliente WHERE correo_usu = $1 AND activo = true` | Búsqueda para login |
 | `findById(id)` | `SELECT ... WHERE id_usu = $1 AND activo = true` | Búsqueda para refresh |
 | `findProfile(id)` | `SELECT ... WHERE id_usu = $1 AND activo = true` | Datos públicos del perfil |
 | `findAll(limit, offset)` | `SELECT ... WHERE activo = true LIMIT $1 OFFSET $2` | Lista paginada |
-| `countAll()` | `SELECT COUNT(*) FROM Cliente WHERE activo = true` | Total para paginación |
-| `create(...)` | `INSERT INTO Cliente ... RETURNING id_usu` | Registro de usuario |
-| `update(id, fields)` | `UPDATE Cliente SET <campos> WHERE id_usu = $n AND activo = true` | Actualización parcial dinámica |
-| `softDelete(id)` | `UPDATE Cliente SET activo = false WHERE id_usu = $1` | Soft delete |
-| `updateRole(id, rol)` | `UPDATE Cliente SET rol_usu = $1 WHERE id_usu = $2` | Cambio de rol |
+| `countAll()` | `SELECT COUNT(*) FROM cliente WHERE activo = true` | Total para paginación |
+| `create(...)` | `INSERT INTO cliente ... RETURNING id_usu` | Registro de usuario |
+| `update(id, fields)` | `UPDATE cliente SET <campos> WHERE id_usu = $n AND activo = true` | Actualización parcial dinámica |
+| `softDelete(id)` | `UPDATE cliente SET activo = false WHERE id_usu = $1` | Soft delete |
+| `updateRole(id, rol)` | `UPDATE cliente SET rol_usu = $1 WHERE id_usu = $2` | Cambio de rol |
 | `incrementLoginAttempts(id, n)` | `UPDATE ... SET intentos_fallidos = $1` | Incrementa contador |
 | `blockUser(id, n)` | `UPDATE ... SET bloqueado_hasta = '9999-...'` | Bloqueo indefinido |
 | `resetLoginAttempts(id)` | `UPDATE ... SET intentos_fallidos = 0` | Reset tras login ok |
@@ -328,7 +328,7 @@ const validate = (schema) => (req, res, next) => {
 | `createResetToken(id, token, exp)` | `INSERT INTO reset_tokens ...` | Guarda token de recuperación |
 | `findResetToken(token)` | `SELECT ... WHERE token = $1 AND usado = false AND expira_en > NOW()` | Valida token |
 | `markTokenAsUsed(token)` | `UPDATE reset_tokens SET usado = true` | Invalida token usado |
-| `updatePassword(id, hash)` | `UPDATE Cliente SET password_usu = $1` | Actualiza contraseña |
+| `updatePassword(id, hash)` | `UPDATE cliente SET password_usu = $1` | Actualiza contraseña |
 
 ### 7.6 `src/services/authService.js` — Lógica JWT
 

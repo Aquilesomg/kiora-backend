@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import logger from './logger';
+import { logger } from '@kiora/shared';
 import dotenv from 'dotenv';
 
 const resolveEnvPath = () => {

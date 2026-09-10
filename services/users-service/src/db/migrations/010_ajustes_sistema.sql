@@ -18,4 +18,4 @@ VALUES (1, true, '03:00', false, 'FEFO', 30)
 ON CONFLICT (id) DO NOTHING;
 
 -- Down Migration
--- DROP TABLE IF EXISTS ajustes_sistema;
+DROP TABLE IF EXISTS ajustes_sistema;

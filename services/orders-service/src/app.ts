@@ -4,8 +4,8 @@ import cors from 'cors';
 import swaggerUi from 'swagger-ui-express';
 import swaggerSpec from './config/swagger';
 import env from './config/env';
-import logger from './config/logger';
-import correlationMiddleware from './middlewares/correlationMiddleware';
+import { logger } from '@kiora/shared';
+import { correlationMiddleware } from '@kiora/shared';
 import promClient from 'prom-client';
 import pool from './config/db';
 

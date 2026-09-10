@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import repo from '../repositories/regionRepository';
-import logger from '../config/logger';
+import { logger } from '@kiora/shared';
 
 async function listRegiones(req: Request, res: Response, next: NextFunction) {
     try {

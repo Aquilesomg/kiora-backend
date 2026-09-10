@@ -4,7 +4,7 @@
 -- Los registros existentes se marcan como activo = true por defecto.
 
 -- Up Migration
-ALTER TABLE Producto ADD COLUMN IF NOT EXISTS activo BOOLEAN NOT NULL DEFAULT true;
+ALTER TABLE producto ADD COLUMN IF NOT EXISTS activo BOOLEAN NOT NULL DEFAULT true;
 
 -- Down Migration
--- ALTER TABLE Producto DROP COLUMN IF EXISTS activo;
+ALTER TABLE producto DROP COLUMN IF EXISTS activo;

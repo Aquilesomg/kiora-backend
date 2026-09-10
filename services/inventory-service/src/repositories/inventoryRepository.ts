@@ -6,28 +6,28 @@ import db from '../config/db';
 
 const findAllSuppliers = ({ limit = 20, offset = 0 } = {}) =>
     db.query(
-        'SELECT * FROM Proveedor ORDER BY cod_prov LIMIT $1 OFFSET $2',
+        'SELECT * FROM proveedor ORDER BY cod_prov LIMIT $1 OFFSET $2',
         [limit, offset]
     );
 
 const countAllSuppliers = () =>
-    db.query('SELECT COUNT(*) FROM Proveedor');
+    db.query('SELECT COUNT(*) FROM proveedor');
 
 const findSupplierById = (id) =>
-    db.query('SELECT * FROM Proveedor WHERE cod_prov = $1', [id]);
+    db.query('SELECT * FROM proveedor WHERE cod_prov = $1', [id]);
 
 const createSupplier = ({ id_prov, nom_prov, tel_prov, tipoid_prov, correo_prov, dir_prov }) =>
     db.query(
-        `INSERT INTO Proveedor (id_prov, nom_prov, tel_prov, tipoid_prov, correo_prov, dir_prov)
+        `INSERT INTO proveedor (id_prov, nom_prov, tel_prov, tipoid_prov, correo_prov, dir_prov)
          VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
         [id_prov, nom_prov, tel_prov, tipoid_prov, correo_prov, dir_prov]
     );
 
 const findSupplierByIdProv = (id_prov, exclude_cod_prov = null) => {
     if (exclude_cod_prov) {
-        return db.query('SELECT * FROM Proveedor WHERE id_prov = $1 AND cod_prov != $2', [id_prov, exclude_cod_prov]);
+        return db.query('SELECT * FROM proveedor WHERE id_prov = $1 AND cod_prov != $2', [id_prov, exclude_cod_prov]);
     }
-    return db.query('SELECT * FROM Proveedor WHERE id_prov = $1', [id_prov]);
+    return db.query('SELECT * FROM proveedor WHERE id_prov = $1', [id_prov]);
 };
 
 const updateSupplier = (id, fields) => {
@@ -39,20 +39,20 @@ const updateSupplier = (id, fields) => {
     const values = entries.map(([, val]) => val);
 
     return db.query(
-        `UPDATE Proveedor SET ${setClause} WHERE cod_prov = $1 RETURNING *`,
+        `UPDATE proveedor SET ${setClause} WHERE cod_prov = $1 RETURNING *`,
         [id, ...values]
     );
 };
 
 const removeSupplier = (id) =>
-    db.query('DELETE FROM Proveedor WHERE cod_prov = $1 RETURNING *', [id]);
+    db.query('DELETE FROM proveedor WHERE cod_prov = $1 RETURNING *', [id]);
 
 /* ── Movimientos (Historial) ─────────────────────────────────────────────── */
 
-const findAllMovements = ({ cod_prod = null, storeId = null, allowedStores = 'ALL', limit = 20, offset = 0 } = {}) => {
+const findAllMovements = ({ cod_prod = null, storeId = null, allowedStores = 'ALL', limit = 20, offset = 0 }: any = {}) => {
     if (allowedStores !== 'ALL' && allowedStores.length === 0) return Promise.resolve({ rows: [] });
 
-    let query = 'SELECT * FROM Inventario WHERE 1=1';
+    let query = 'SELECT * FROM inventario WHERE 1=1';
     const params: any[] = [];
     let pCount = 1;
 
@@ -78,7 +78,7 @@ const findAllMovements = ({ cod_prod = null, storeId = null, allowedStores = 'AL
 const countAllMovements = ({ cod_prod = null, storeId = null, allowedStores = 'ALL' }: any = {}) => {
     if (allowedStores !== 'ALL' && allowedStores.length === 0) return Promise.resolve({ rows: [{ count: 0 }] });
 
-    let query = 'SELECT COUNT(*) FROM Inventario WHERE 1=1';
+    let query = 'SELECT COUNT(*) FROM inventario WHERE 1=1';
     const params: any[] = [];
     let pCount = 1;
 
@@ -99,7 +99,7 @@ const countAllMovements = ({ cod_prod = null, storeId = null, allowedStores = 'A
 
 const createMovement = ({ tipo_mov, fecha_mov, cantidad, cod_prod, fk_cod_prov, fk_id_vent, desc_mov, store_id = 1 }) =>
     db.query(
-        `INSERT INTO Inventario (tipo_mov, fecha_mov, cantidad, cod_prod, fk_cod_prov, fk_id_vent, desc_mov, store_id)
+        `INSERT INTO inventario (tipo_mov, fecha_mov, cantidad, cod_prod, fk_cod_prov, fk_id_vent, desc_mov, store_id)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
          ON CONFLICT (fk_id_vent, cod_prod, tipo_mov) WHERE fk_id_vent IS NOT NULL
          DO UPDATE SET cantidad = EXCLUDED.cantidad, desc_mov = EXCLUDED.desc_mov
@@ -112,24 +112,24 @@ const createMovement = ({ tipo_mov, fecha_mov, cantidad, cod_prod, fk_cod_prov, 
 const findAllSuministra = ({ limit = 20, offset = 0 } = {}) =>
     db.query(
         `SELECT s.*, p.nom_prov, p.correo_prov
-         FROM Suministra s
-         JOIN Proveedor p ON p.cod_prov = s.fk_cod_prov
+         FROM suministra s
+         JOIN proveedor p ON p.cod_prov = s.fk_cod_prov
          ORDER BY s.id
          LIMIT $1 OFFSET $2`,
         [limit, offset]
     );
 
 const countAllSuministra = () =>
-    db.query('SELECT COUNT(*) FROM Suministra');
+    db.query('SELECT COUNT(*) FROM suministra');
 
 const findSuministraById = (id) =>
-    db.query('SELECT * FROM Suministra WHERE id = $1', [id]);
+    db.query('SELECT * FROM suministra WHERE id = $1', [id]);
 
 const findSuministraByProduct = (cod_prod) =>
     db.query(
         `SELECT s.*, p.nom_prov, p.correo_prov
-         FROM Suministra s
-         JOIN Proveedor p ON p.cod_prov = s.fk_cod_prov
+         FROM suministra s
+         JOIN proveedor p ON p.cod_prov = s.fk_cod_prov
          WHERE s.cod_prod = $1
          ORDER BY s.id LIMIT 1`,
         [cod_prod]
@@ -227,7 +227,7 @@ const updateStock = async (cod_prod, delta, fk_cod_prov = null, fecha_vencimient
         }
 
         const legacyRes = await client.query(
-            `INSERT INTO Suministra (fk_cod_prov, cod_prod, stock, stock_minimo)
+            `INSERT INTO suministra (fk_cod_prov, cod_prod, stock, stock_minimo)
              VALUES ($1, $2, GREATEST(0, $3), 0)
              ON CONFLICT (fk_cod_prov, cod_prod)
              DO UPDATE SET stock = GREATEST(0, Suministra.stock + $3)${vencimientoSet}
@@ -251,7 +251,7 @@ const updateStock = async (cod_prod, delta, fk_cod_prov = null, fecha_vencimient
  */
 const upsertSuministra = ({ fk_cod_prov, cod_prod, stock, stock_minimo }) =>
     db.query(
-        `INSERT INTO Suministra (fk_cod_prov, cod_prod, stock, stock_minimo)
+        `INSERT INTO suministra (fk_cod_prov, cod_prod, stock, stock_minimo)
          VALUES ($1, $2, $3, $4)
          ON CONFLICT (fk_cod_prov, cod_prod)
          DO UPDATE SET stock = $3, stock_minimo = $4
@@ -266,8 +266,8 @@ const upsertSuministra = ({ fk_cod_prov, cod_prod, stock, stock_minimo }) =>
 const findLowStock = () =>
     db.query(
         `SELECT s.*, p.nom_prov, p.correo_prov
-         FROM Suministra s
-         JOIN Proveedor p ON p.cod_prov = s.fk_cod_prov
+         FROM suministra s
+         JOIN proveedor p ON p.cod_prov = s.fk_cod_prov
          WHERE s.stock < s.stock_minimo
          ORDER BY s.id`
     );
@@ -275,7 +275,7 @@ const findLowStock = () =>
 /**
  * Obtener trazabilidad (Kardex) de un producto
  */
-const getKardexByProduct = (cod_prod, allowedStores = 'ALL') => {
+const getKardexByProduct = (cod_prod: any, allowedStores: any = 'ALL') => {
     if (allowedStores !== 'ALL' && allowedStores.length === 0) return Promise.resolve({ rows: [] });
 
     let query = `SELECT ml.id, ml.tipo_mov, ml.cantidad, ml.fecha_mov, ml.desc_mov, l.numero_lote 
@@ -297,7 +297,7 @@ const getKardexByProduct = (cod_prod, allowedStores = 'ALL') => {
 /**
  * Obtener todos los lotes de un producto
  */
-const findLotesByProduct = (cod_prod, storeId = null, allowedStores = 'ALL') => {
+const findLotesByProduct = (cod_prod: any, storeId = null, allowedStores: any = 'ALL') => {
     if (allowedStores !== 'ALL' && allowedStores.length === 0) return Promise.resolve({ rows: [] });
 
     let query = `SELECT * FROM lotes WHERE cod_prod = $1 AND estado = 'ACTIVO'`;

@@ -5,10 +5,10 @@
 -- stock_minimo: umbral para alertas de stock crítico.
 
 -- Up Migration
-ALTER TABLE Producto
+ALTER TABLE producto
     ADD COLUMN IF NOT EXISTS stock_actual INTEGER NOT NULL DEFAULT 0,
     ADD COLUMN IF NOT EXISTS stock_minimo INTEGER NOT NULL DEFAULT 0;
 
 -- Down Migration
--- ALTER TABLE Producto DROP COLUMN IF EXISTS stock_actual;
--- ALTER TABLE Producto DROP COLUMN IF EXISTS stock_minimo;
+ALTER TABLE producto DROP COLUMN IF EXISTS stock_actual;
+ALTER TABLE producto DROP COLUMN IF EXISTS stock_minimo;

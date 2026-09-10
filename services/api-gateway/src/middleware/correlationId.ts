@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 import { Request, Response, NextFunction } from 'express';
-import { asyncContext } from '../utils/asyncContext';
+import { asyncContext } from '@kiora/shared';
 
 export const correlationId = (req: Request, res: Response, next: NextFunction) => {
     const id =

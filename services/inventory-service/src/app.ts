@@ -6,7 +6,7 @@ import cors        from 'cors';
 import swaggerUi   from 'swagger-ui-express';
 import swaggerSpec from './config/swagger';
 import env         from './config/env';
-import logger      from './config/logger';
+import { logger } from '@kiora/shared';
 
 const app = express();
 
@@ -15,7 +15,7 @@ app.use(cors({ origin: env.corsOrigin, credentials: true }));
 app.use(express.json());
 
 // ── Correlation ID (AsyncLocalStorage) — DEBE IR ANTES de cualquier ruta ──
-import correlationMiddleware from './middlewares/correlationMiddleware';
+import { correlationMiddleware } from '@kiora/shared';
 app.use(correlationMiddleware);
 
 app.get('/health', (_req, res) => res.json({ status: 'ok', service: 'inventory-service' }));

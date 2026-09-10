@@ -2,6 +2,7 @@
 
 import logger from '../config/logger.js';
 import { generateSalesExcel  } from '../utils/excelBuilder.js';
+import { getOrders } from '../repositories/reportRepository.js';
 
 /**
  * exportController
@@ -14,29 +15,9 @@ const exportVentasExcel = async (req, res) => {
     const { desde, hasta } = req.query;
 
     try {
-        // 1. Obtener dataset completo del orders-service (red interna)
-        const ordersUrl = process.env.ORDERS_SERVICE_URL || 'http://localhost:3004';
-        const params = new URLSearchParams();
-        if (desde) params.append('desde', desde);
-        if (hasta) params.append('hasta', hasta);
-
-        const queryString = params.toString() ? `?${params.toString()}` : '';
-        const fetchUrl = `${ordersUrl}/api/orders/export/full${queryString}`;
-
-        logger.info('Solicitando dataset de ventas para exportación', { fetchUrl });
-
-        const response = await fetch(fetchUrl);
-
-        if (!response.ok) {
-            const errBody = await response.text();
-            logger.error('Error obteniendo datos de orders-service', { status: response.status, body: errBody });
-            return res.status(response.status).json({
-                error: 'No se pudieron obtener los datos de ventas.',
-                details: errBody,
-            });
-        }
-
-        const data = await response.json();
+        // 1. Obtener dataset completo de la réplica local (CQRS)
+        const data = await getOrders(desde as string, hasta as string);
+        logger.info('Dataset de ventas obtenido desde réplica local', { records: data.length });
 
         // 2. Generar nombre descriptivo del archivo
         const ahora = new Date().toISOString().slice(0, 10);

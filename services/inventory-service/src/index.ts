@@ -4,7 +4,7 @@ require('dotenv').config({ path: process.env.DOTENV_CONFIG_PATH || '.env.local' 
 require('./config/tracing');
 
 import env    from './config/env';
-import logger from './config/logger';
+import { logger } from '@kiora/shared';
 import app    from './app';
 
 const server = app.listen(env.port, () => {

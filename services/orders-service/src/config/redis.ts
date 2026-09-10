@@ -1,8 +1,5 @@
-import Redis from 'ioredis';
+import { createRedisClient } from '@kiora/shared';
 
-const redisClient = new Redis({
-  host: process.env.REDIS_HOST || 'kiora-redis',
-  port: Number(process.env.REDIS_PORT) || 6379,
-});
+const redisClient = createRedisClient({ name: 'orders-redis', lazyConnect: false });
 
 export default redisClient;

@@ -13,7 +13,7 @@ COMMENT ON COLUMN sesion_caja.store_id IS
     'Tienda en la que se abrió esta sesión de caja (Referencia a Tienda.id_tienda)';
 
 -- 2. Añadir campos a la tabla ventas
-ALTER TABLE ventas
+ALTER TABLE venta
     ADD COLUMN IF NOT EXISTS store_id INTEGER NOT NULL DEFAULT 1,
     ADD COLUMN IF NOT EXISTS tipo_entrega VARCHAR(20) NOT NULL DEFAULT 'PICKUP' CHECK (tipo_entrega IN ('PICKUP', 'MESA')),
     ADD COLUMN IF NOT EXISTS fk_id_mesa INTEGER;
@@ -31,8 +31,8 @@ CREATE INDEX IF NOT EXISTS idx_ventas_store ON ventas(store_id);
 CREATE INDEX IF NOT EXISTS idx_ventas_mesa ON ventas(fk_id_mesa);
 
 -- Down Migration
--- ALTER TABLE sesion_caja DROP COLUMN IF EXISTS store_id;
--- ALTER TABLE ventas DROP COLUMN IF EXISTS store_id, DROP COLUMN IF EXISTS tipo_entrega, DROP COLUMN IF EXISTS fk_id_mesa;
--- DROP INDEX IF EXISTS idx_sesion_caja_store;
--- DROP INDEX IF EXISTS idx_ventas_store;
--- DROP INDEX IF EXISTS idx_ventas_mesa;
+ALTER TABLE sesion_caja DROP COLUMN IF EXISTS store_id;
+ALTER TABLE venta DROP COLUMN IF EXISTS store_id, DROP COLUMN IF EXISTS tipo_entrega, DROP COLUMN IF EXISTS fk_id_mesa;
+DROP INDEX IF EXISTS idx_sesion_caja_store;
+DROP INDEX IF EXISTS idx_ventas_store;
+DROP INDEX IF EXISTS idx_ventas_mesa;

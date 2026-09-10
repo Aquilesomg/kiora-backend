@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import pool from '../config/db';
-import logger from '../config/logger';
+import { logger } from '@kiora/shared';
 
 
 export const openSession = async (req: Request, res: Response, next: NextFunction) => {
@@ -39,7 +39,7 @@ export const closeSession = async (req: Request, res: Response, next: NextFuncti
         const sessionId = current.rows[0].id;
 
         // Calcular total real de la sesión (sumando ventas)
-        const totalVentasResult = await pool.query("SELECT COALESCE(SUM(montofinal_vent), 0) as total FROM Ventas WHERE sesion_id = $1 AND estado != 'cancelada'", [sessionId]);
+        const totalVentasResult = await pool.query("SELECT COALESCE(SUM(montofinal_vent), 0) as total FROM venta WHERE sesion_id = $1 AND estado != 'cancelada'", [sessionId]);
         const total = totalVentasResult.rows[0].total;
 
         const result = await pool.query(
@@ -65,7 +65,7 @@ export const getCurrentSession = async (req: Request, res: Response, next: NextF
 
         // Obtener total ventas en vivo
         const sessionId = current.rows[0].id;
-        const totalVentasResult = await pool.query("SELECT COALESCE(SUM(montofinal_vent), 0) as total FROM Ventas WHERE sesion_id = $1 AND estado != 'cancelada'", [sessionId]);
+        const totalVentasResult = await pool.query("SELECT COALESCE(SUM(montofinal_vent), 0) as total FROM venta WHERE sesion_id = $1 AND estado != 'cancelada'", [sessionId]);
         current.rows[0].total_ventas_vivo = totalVentasResult.rows[0].total;
         
         res.json(current.rows[0]);
@@ -95,7 +95,7 @@ export const forceCloseSessionByCron = async () => {
         const openSessions = await pool.query("SELECT id, store_id FROM sesion_caja WHERE estado = 'ABIERTA'");
         for (const session of openSessions.rows) {
             const sessionId = session.id;
-            const totalVentasResult = await pool.query("SELECT COALESCE(SUM(montofinal_vent), 0) as total FROM Ventas WHERE sesion_id = $1 AND estado != 'cancelada'", [sessionId]);
+            const totalVentasResult = await pool.query("SELECT COALESCE(SUM(montofinal_vent), 0) as total FROM venta WHERE sesion_id = $1 AND estado != 'cancelada'", [sessionId]);
             const total = totalVentasResult.rows[0].total;
             
             await pool.query(
@@ -128,7 +128,7 @@ export const forceCloseSessionByCronIfNeeded = async (closeTimestamp: Date, tz: 
             if (sessionOpenTime < closeTimestamp) {
                 const sessionId = session.id;
                 const totalVentasResult = await pool.query(
-                    "SELECT COALESCE(SUM(montofinal_vent), 0) as total FROM Ventas WHERE sesion_id = $1 AND estado != 'cancelada'",
+                    "SELECT COALESCE(SUM(montofinal_vent), 0) as total FROM venta WHERE sesion_id = $1 AND estado != 'cancelada'",
                     [sessionId]
                 );
                 const total = totalVentasResult.rows[0].total;
@@ -167,7 +167,7 @@ export const getSessionReport = async (req: Request, res: Response, next: NextFu
         // Obtener resumen de ventas por método de pago para esta sesión
         const salesRes = await pool.query(`
             SELECT COALESCE(metodopago_usu, 'Efectivo') as metodo, SUM(montofinal_vent) as total, COUNT(*) as cantidad
-            FROM Ventas
+            FROM venta
             WHERE sesion_id = $1 AND estado != 'cancelada'
             GROUP BY COALESCE(metodopago_usu, 'Efectivo')
         `, [sessionId]);

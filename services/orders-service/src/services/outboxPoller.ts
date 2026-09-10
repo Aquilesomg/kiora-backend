@@ -1,13 +1,36 @@
 import crypto from 'crypto';
 import db from '../config/db';
-import logger from '../config/logger';
+import { logger } from '@kiora/shared';
 import env from '../config/env';
-import asyncContext from '../utils/asyncContext';
+import { asyncContext } from '@kiora/shared';
 import { fetchWithRetry, DEFAULT_TIMEOUT_MS, NOTIFY_TIMEOUT_MS, outgoingHeaders } from '../utils/httpClient';
 import * as stripeService from './stripeService';
 import * as factusService from './factusService';
 import * as orderRepository from '../repositories/orderRepository';
 import * as invoiceRepository from '../repositories/invoiceRepository';
+import { Queue } from 'bullmq';
+import Redis from 'ioredis';
+
+// Configurar Redis para BullMQ
+const redisOptions: any = {};
+if (process.env.REDIS_SENTINEL_HOSTS) {
+  const hosts = process.env.REDIS_SENTINEL_HOSTS.split(',');
+  redisOptions.sentinels = hosts.map((h) => {
+    const [host, port] = h.split(':');
+    return { host, port: parseInt(port, 10) || 26379 };
+  });
+  redisOptions.name = process.env.REDIS_SENTINEL_NAME || 'kiora-master';
+} else {
+  redisOptions.host = process.env.REDIS_HOST || 'localhost';
+  redisOptions.port = parseInt(process.env.REDIS_PORT || '6379', 10);
+}
+
+if (process.env.REDIS_PASSWORD) {
+  redisOptions.password = process.env.REDIS_PASSWORD;
+}
+
+const connection = new Redis(redisOptions);
+const siesaQueue = new Queue('siesa-sync-queue', { connection });
 
 /**
  * Outbox Poller con retry inteligente, Dead-Letter Queue (DLQ)
@@ -188,6 +211,51 @@ export async function processEvent(event: any) {
         }
     }
 
+    case 'siesa.sync_order': {
+        try {
+            // Encolar trabajo en BullMQ
+            await siesaQueue.add('SYNC_ORDER', payload, {
+                jobId: `siesa-sync-${id}`, // Idempotencia garantizada por BullMQ
+                attempts: 5,
+                backoff: {
+                    type: 'exponential',
+                    delay: 2000
+                }
+            });
+
+            logger.info('Outbox: pedido enviado a BullMQ para sincronización SIESA', {
+                id, orderId: payload.orderId,
+            });
+            return { ok: true };
+        } catch (err: unknown) {
+            logger.warn('Outbox siesa.sync_order: fallo al encolar en BullMQ', {
+                id, error: (err as Error).message, retry_count: event.retry_count,
+            });
+            return { ok: false, businessError: false };
+        }
+    }
+
+    case 'reports.sync_order': {
+        try {
+            const reportsQueue = new Queue('reports-sync-queue', { connection });
+            await reportsQueue.add('SYNC_ORDER', payload, {
+                jobId: `reports-sync-${id}`,
+                attempts: 5,
+                backoff: { type: 'exponential', delay: 2000 }
+            });
+
+            logger.info('Outbox: pedido enviado a BullMQ para sincronización de Reportes (CQRS)', {
+                id, orderId: payload.orderId,
+            });
+            return { ok: true };
+        } catch (err: unknown) {
+            logger.warn('Outbox reports.sync_order: fallo al encolar en BullMQ', {
+                id, error: (err as Error).message, retry_count: event.retry_count,
+            });
+            return { ok: false, businessError: false };
+        }
+    }
+
     default:
         logger.warn('Outbox: tipo de evento desconocido', { id, event_type });
         return { ok: true }; // No bloquear el poller
@@ -214,7 +282,7 @@ export async function compensateOrder(orderId: string | number, reason: string) 
     try {
         // 1. Obtener orden con sus datos de pago
         const orderResult = await db.query(
-            'SELECT id_vent, estado, stripe_payment_id FROM Ventas WHERE id_vent = $1',
+            'SELECT id_vent, estado, stripe_payment_id FROM venta WHERE id_vent = $1',
             [orderId]
         );
 

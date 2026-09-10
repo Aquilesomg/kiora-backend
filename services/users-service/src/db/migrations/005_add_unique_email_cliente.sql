@@ -5,7 +5,7 @@ DO $$
 BEGIN
     IF EXISTS (
         SELECT 1
-        FROM Cliente
+        FROM cliente
         WHERE activo = true
         GROUP BY lower(trim(correo_usu))
         HAVING COUNT(*) > 1

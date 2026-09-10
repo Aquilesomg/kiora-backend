@@ -1,13 +1,9 @@
 'use strict';
-import Redis from 'ioredis';
-import logger from '../config/logger';
+import { createRedisClient } from '@kiora/shared';
+import { logger } from '@kiora/shared';
 
-const redisClient = process.env.REDIS_HOST
-    ? new Redis({
-          host: process.env.REDIS_HOST,
-          port: Number(process.env.REDIS_PORT) || 6379,
-          retryStrategy: (times: number) => Math.min(times * 50, 2000),
-      })
+const redisClient = process.env.REDIS_HOST || process.env.REDIS_SENTINEL_HOSTS
+    ? createRedisClient({ name: 'inventory-redis' })
     : null;
 
 if (redisClient) {
@@ -63,10 +59,14 @@ const getReservedQuantityForProduct = async (cod_prod) => {
 const getAdminEmails = async () => {
     const baseUrl = process.env.USERS_SERVICE_URL || 'http://users-service:3001';
     try {
+        if (!process.env.INTERNAL_SECRET) {
+            logger.error('INTERNAL_SECRET no está configurado, omitiendo petición');
+            return [];
+        }
         const res = await fetch(`${baseUrl}/api/auth/users/admins`, {
             signal: AbortSignal.timeout(5000),
             headers: {
-                'x-internal-secret': process.env.INTERNAL_SECRET || 'kiora_internal_2024'
+                'x-internal-secret': process.env.INTERNAL_SECRET
             }
         });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);

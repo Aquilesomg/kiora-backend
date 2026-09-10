@@ -1,0 +1,47 @@
+# ══════════════════════════════════════════════════════════
+#  Traefik v2 — Configuración Dinámica
+#  Middlewares de seguridad reutilizables
+# ══════════════════════════════════════════════════════════
+
+http:
+  middlewares:
+
+    # ── Headers de Seguridad ─────────────────────────────
+    secure-headers:
+      headers:
+        # Evitar clickjacking
+        frameDeny: true
+        # Forzar HTTPS una vez en producción
+        stsSeconds: 31536000
+        stsIncludeSubdomains: true
+        stsPreload: true
+        # No adivinar content-type
+        contentTypeNosniff: true
+        # XSS protection legado
+        browserXssFilter: true
+        # Referrer policy
+        referrerPolicy: "strict-origin-when-cross-origin"
+        # Permisos de features del navegador
+        permissionsPolicy: "camera=(), microphone=(), geolocation=()"
+        # Eliminar cabeceras que revelan tecnología interna
+        customResponseHeaders:
+          X-Powered-By: ""
+          Server: ""
+
+    # ── Rate Limit en capa LB (complementa el de Redis en el Gateway) ──
+    rate-limit-global:
+      rateLimit:
+        average: 200    # req/s por IP
+        burst: 50       # burst adicional permitido
+        period: 1s
+
+    # ── Compresión gzip/br ────────────────────────────────
+    compress:
+      compress: {}
+
+    # ── Retry automático en caso de error del backend ─────
+    # (útil durante rolling updates de réplicas del gateway)
+    retry-on-error:
+      retry:
+        attempts: 3
+        initialInterval: 100ms

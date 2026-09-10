@@ -4,7 +4,7 @@ import cors from 'cors';
 import swaggerUi from 'swagger-ui-express';
 import swaggerSpec from './config/swagger';
 import './config/env';
-import logger from './config/logger';
+import { logger } from '@kiora/shared';
 
 import path from 'path';
 
@@ -21,7 +21,7 @@ app.use(express.json());
 
 app.use('/uploads', express.static(path.join(__dirname, 'public', 'uploads')));
 
-import correlationMiddleware from './middlewares/correlationMiddleware';
+import { correlationMiddleware } from '@kiora/shared';
 app.use(correlationMiddleware);
 
 app.get('/health', (_req: Request, res: Response) => {
@@ -73,8 +73,18 @@ import categoryRoutes from './routes/categoryRoutes';
 app.use('/api/products', productRoutes);
 app.use('/api/categories', categoryRoutes);
 
+import { AppError } from './utils/AppError';
+
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
+    if (err instanceof AppError) {
+        return res.status(err.statusCode).json({
+            error: err.message,
+            code: err.code,
+            ...err.details
+        });
+    }
+
     logger.error('Error no controlado', { message: (err as Error).message, stack: (err as Error).stack });
     res.status((err as any).status || 500).json({
         error: (err as any).status ? (err as Error).message : 'Error interno del servidor.',

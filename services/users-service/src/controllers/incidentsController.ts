@@ -1,5 +1,5 @@
 import * as repo from '../repositories/incidentsRepository';
-import logger from '../config/logger';
+import { logger } from '@kiora/shared';
 import { Request, Response } from 'express';
 
 export const getAll = async (req: Request, res: Response) => {

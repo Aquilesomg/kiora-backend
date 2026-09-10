@@ -7,7 +7,7 @@ import { addToBlacklist } from '../middleware/authMiddleware';
 import * as emailService from '../config/emailService';
 import { client as redisClient } from '../config/blacklist';
 import logActivity from '../utils/logActivity';
-import logger from '../config/logger';
+import { logger } from '@kiora/shared';
 import { Request, Response, NextFunction } from 'express';
 import { AuthenticatedRequest } from '../middleware/authMiddleware';
 

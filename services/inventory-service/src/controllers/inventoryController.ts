@@ -6,8 +6,7 @@ import directEmailService from '../services/directEmailService';
 import logActivity from '../utils/logActivity';
 import redisService from '../services/redisService';
 import parsePagination from '../utils/parsePagination';
-import { getAllowedStoreIds } from '../utils/rbacUtils';
-import logger from '../config/logger';
+import { logger } from '@kiora/shared';
 
 /**
  * inventoryController
@@ -121,7 +120,9 @@ const getMovements = async (req, res, next) => {
         const { cod_prod, store_id } = req.query;
         const { page, limit, offset } = parsePagination(req.query);
 
-        const allowedStores = await getAllowedStoreIds(req);
+        const storesHeader = req.headers['x-allowed-stores'];
+        const allowedStores = storesHeader === 'ALL' ? 'ALL' : (typeof storesHeader === 'string' ? storesHeader.split(',').map(Number) : []);
+
         if (allowedStores !== 'ALL' && allowedStores.length === 0) {
             return res.status(403).json({ error: 'No tienes acceso a ninguna tienda.', code: 'FORBIDDEN_SCOPE' });
         }
@@ -286,7 +287,9 @@ const getAlerts = async (_req, res, next) => {
 const getKardex = async (req, res, next) => {
     const { id } = req.params;
     try {
-        const allowedStores = await getAllowedStoreIds(req);
+        const storesHeader = req.headers['x-allowed-stores'];
+        const allowedStores = storesHeader === 'ALL' ? 'ALL' : (typeof storesHeader === 'string' ? storesHeader.split(',').map(Number) : []);
+
         if (allowedStores !== 'ALL' && allowedStores.length === 0) {
             return res.status(403).json({ error: 'No tienes acceso a ninguna tienda.', code: 'FORBIDDEN_SCOPE' });
         }
@@ -309,7 +312,9 @@ const getLotesByProduct = async (req, res, next) => {
     const { id } = req.params;
     const { store_id } = req.query;
     try {
-        const allowedStores = await getAllowedStoreIds(req);
+        const storesHeader = req.headers['x-allowed-stores'];
+        const allowedStores = storesHeader === 'ALL' ? 'ALL' : (typeof storesHeader === 'string' ? storesHeader.split(',').map(Number) : []);
+
         if (allowedStores !== 'ALL' && allowedStores.length === 0) {
             return res.status(403).json({ error: 'No tienes acceso a ninguna tienda.', code: 'FORBIDDEN_SCOPE' });
         }

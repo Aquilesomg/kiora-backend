@@ -36,10 +36,10 @@ SELECT
     NULL, 
     s.stock, 
     s.stock
-FROM Suministra s
+FROM suministra s
 WHERE s.stock > 0;
 
 -- Down Migration
--- DROP TABLE IF EXISTS movimientos_lote;
--- DROP INDEX IF EXISTS idx_lotes_prod_vencimiento;
--- DROP TABLE IF EXISTS lotes;
+DROP TABLE IF EXISTS movimientos_lote;
+DROP INDEX IF EXISTS idx_lotes_prod_vencimiento;
+DROP TABLE IF EXISTS lotes;

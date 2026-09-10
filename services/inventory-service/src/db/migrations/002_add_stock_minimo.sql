@@ -4,8 +4,8 @@
 -- HU14 — Configurar stock mínimo por relación proveedor-producto.
 
 -- Up Migration
-ALTER TABLE Suministra
+ALTER TABLE suministra
     ADD COLUMN IF NOT EXISTS stock_minimo INT NOT NULL DEFAULT 0 CHECK (stock_minimo >= 0);
 
 -- Down Migration
--- ALTER TABLE Suministra DROP COLUMN IF EXISTS stock_minimo;
+ALTER TABLE suministra DROP COLUMN IF EXISTS stock_minimo;

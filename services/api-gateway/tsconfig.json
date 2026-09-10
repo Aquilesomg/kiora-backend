@@ -5,13 +5,16 @@
     "moduleResolution": "node16",
     "isolatedModules": true,
     "outDir": "./dist",
-    "rootDir": "./src",
+    "rootDir": "../..",
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true
   },
-  "include": ["src/**/*"],
+  "include": [
+    "src/**/*",
+    "../shared/redis/**/*"
+  ],
   "exclude": ["node_modules", "dist", "src/**/*.test.ts"]
 }

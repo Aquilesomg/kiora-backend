@@ -8,26 +8,26 @@ import db from '../config/db';
 export const findAll = ({ limit = 20, offset = 0 } = {}) =>
     db.query(
         `SELECT f.*, v.fecha_vent, v.estado
-         FROM Factura f
-         JOIN Ventas v ON v.id_vent = f.fk_id_vent
+         FROM factura f
+         JOIN venta v ON v.id_vent = f.fk_id_vent
          ORDER BY f.emitida_en DESC
          LIMIT $1 OFFSET $2`,
         [limit, offset]
     );
 
-export const countAll = () => db.query('SELECT COUNT(*) FROM Factura');
+export const countAll = () => db.query('SELECT COUNT(*) FROM factura');
 
 export const findById = (id: number | string) =>
     db.query(
         `SELECT f.*, v.fecha_vent, v.estado, v.metodopago_usu
-         FROM Factura f
-         JOIN Ventas v ON v.id_vent = f.fk_id_vent
+         FROM factura f
+         JOIN venta v ON v.id_vent = f.fk_id_vent
          WHERE f.id = $1`,
         [id]
     );
 
 export const findByVenta = (fk_id_vent: number | string) =>
-    db.query('SELECT * FROM Factura WHERE fk_id_vent = $1', [fk_id_vent]);
+    db.query('SELECT * FROM factura WHERE fk_id_vent = $1', [fk_id_vent]);
 
 /**
  * Emite una factura para una venta existente.
@@ -36,7 +36,7 @@ export const findByVenta = (fk_id_vent: number | string) =>
  */
 export const create = ({ fk_id_vent, id_usu, cantidad_vent, precio_prod, montototal_vent }: any, client = db) =>
     client.query(
-        `INSERT INTO Factura (fk_id_vent, id_usu, cantidad_vent, precio_prod, montototal_vent)
+        `INSERT INTO factura (fk_id_vent, id_usu, cantidad_vent, precio_prod, montototal_vent)
          VALUES ($1, $2, $3, $4, $5) RETURNING *`,
         [fk_id_vent, id_usu, cantidad_vent, precio_prod, montototal_vent]
     );
@@ -48,7 +48,7 @@ export const create = ({ fk_id_vent, id_usu, cantidad_vent, precio_prod, montoto
  */
 export const updateFactusFields = (invoiceId: number | string, fields: any, client = db) =>
     client.query(
-        `UPDATE Factura
+        `UPDATE factura
          SET factus_invoice_number = COALESCE($2, factus_invoice_number),
              factus_cufe           = COALESCE($3, factus_cufe),
              factus_public_url     = COALESCE($4, factus_public_url),
@@ -74,7 +74,7 @@ export const findByVentaWithFactus = (fk_id_vent: number | string) =>
     db.query(
         `SELECT id, fk_id_vent, factus_invoice_number, factus_cufe,
                 factus_public_url, factus_qr_link, factus_status
-         FROM Factura
+         FROM factura
          WHERE fk_id_vent = $1`,
         [fk_id_vent]
     );

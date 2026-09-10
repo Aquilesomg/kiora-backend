@@ -4,7 +4,7 @@
 -- Up Migration
 CREATE TABLE IF NOT EXISTS reset_tokens (
     id        SERIAL PRIMARY KEY,
-    id_usu    INT NOT NULL REFERENCES Cliente(id_usu),
+    id_usu    INT NOT NULL REFERENCES cliente(id_usu),
     token     VARCHAR(255) NOT NULL UNIQUE,
     expira_en TIMESTAMP NOT NULL,
     usado     BOOLEAN NOT NULL DEFAULT false,
@@ -12,4 +12,4 @@ CREATE TABLE IF NOT EXISTS reset_tokens (
 );
 
 -- Down Migration
--- DROP TABLE IF EXISTS reset_tokens;
+DROP TABLE IF EXISTS reset_tokens;

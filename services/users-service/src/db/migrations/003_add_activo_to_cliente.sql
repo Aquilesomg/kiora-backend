@@ -2,8 +2,8 @@
 -- HU44: Soft delete de usuarios — la columna activo permite "eliminar" sin perder datos históricos
 
 -- Up Migration
-ALTER TABLE Cliente
+ALTER TABLE cliente
     ADD COLUMN IF NOT EXISTS activo BOOLEAN NOT NULL DEFAULT true;
 
 -- Down Migration
--- ALTER TABLE Cliente DROP COLUMN IF EXISTS activo;
+ALTER TABLE cliente DROP COLUMN IF EXISTS activo;

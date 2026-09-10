@@ -13,7 +13,7 @@
 -- Up Migration
 
 -- 1. Movimientos de inventario (tabla Inventario) → saber desde qué tienda se registró
-ALTER TABLE Inventario
+ALTER TABLE inventario
     ADD COLUMN IF NOT EXISTS store_id INTEGER NOT NULL DEFAULT 1;
 
 COMMENT ON COLUMN Inventario.store_id IS
@@ -31,8 +31,8 @@ CREATE INDEX IF NOT EXISTS idx_inventario_store ON Inventario(store_id);
 CREATE INDEX IF NOT EXISTS idx_lotes_store      ON lotes(store_id);
 
 -- Down Migration
--- ALTER TABLE Inventario DROP COLUMN IF EXISTS store_id;
--- ALTER TABLE lotes DROP COLUMN IF EXISTS store_id;
--- DROP INDEX IF EXISTS idx_inventario_store;
--- DROP INDEX IF EXISTS idx_lotes_store;
+ALTER TABLE inventario DROP COLUMN IF EXISTS store_id;
+ALTER TABLE lotes DROP COLUMN IF EXISTS store_id;
+DROP INDEX IF EXISTS idx_inventario_store;
+DROP INDEX IF EXISTS idx_lotes_store;
 
